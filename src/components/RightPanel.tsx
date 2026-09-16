@@ -74,6 +74,11 @@ interface RightPanelProps {
   onAlign?: (mode: "left" | "centerX" | "right" | "top" | "centerY" | "bottom") => void;
   onDistribute?: (axis: "x" | "y") => void;
   onRename?: (id: string, name: string) => void;
+  docWidth?: number;
+  docHeight?: number;
+  onOpenImage?: () => void;
+  onNewCanvas?: () => void;
+  onShapeTool?: () => void;
 }
 
 export default function RightPanel({
@@ -115,6 +120,11 @@ export default function RightPanel({
   onAlign,
   onDistribute,
   onRename,
+  docWidth = 0,
+  docHeight = 0,
+  onOpenImage,
+  onNewCanvas,
+  onShapeTool,
 }: RightPanelProps) {
   const selected = textLayers.find((t) => t.id === selectedTextId) ?? null;
   const selImg = imageLayers.find((l) => selectedLayer?.kind === "image" && l.id === selectedLayer.id) ?? null;
@@ -191,72 +201,36 @@ export default function RightPanel({
           />
         )}
         {activeTab === "design" && (
-          selected || selImg || selShape || selSolid ? (
-            selImg && onUpdateImageLayer ? (
-              <GenericDesign
-                title={selImg.name}
-                onDelete={() => onDeleteGeneric?.("image", selImg.id)}
-                onDuplicate={() => onDuplicateGeneric?.("image", selImg.id)}
-              >
-                <SliderRow label="Opacity" value={selImg.opacity} min={0} max={100} onChange={(v) => onUpdateImageLayer(selImg.id, { opacity: Math.round(v) })} suffix="%" />
-                <BlendRow value={(selImg as { blendMode?: string }).blendMode ?? "source-over"} onChange={(v) => onBlendChange?.(selImg.id, v)} />
-                <ArrangeRow onMove={(d) => onMoveLayer?.(selImg.id, d)} />
-                <SliderRow label="Rotation" value={selImg.rotation} min={-180} max={180} onChange={(v) => onUpdateImageLayer(selImg.id, { rotation: Math.round(v) })} suffix="°" />
-                <ToggleLine label="Visible" value={selImg.visible} onChange={(v) => onUpdateImageLayer(selImg.id, { visible: v })} />
-                <ToggleLine label="Locked" value={selImg.locked} onChange={(v) => onUpdateImageLayer(selImg.id, { locked: v })} />
-                <p className="text-xs" style={{ color: "var(--muted-foreground)", lineHeight: 1.6 }}>اسحب الطبقة في الكانفس للتحريك — الزوايا للتحجيم والتدوير.</p>
-              </GenericDesign>
-            ) : selShape && onUpdateShapeLayer ? (
-              <GenericDesign
-                title={selShape.name}
-                onDelete={() => onDeleteGeneric?.("shape", selShape.id)}
-                onDuplicate={() => onDuplicateGeneric?.("shape", selShape.id)}
-              >
-                <ColorRow label="Fill" value={selShape.color} onChange={(v) => onUpdateShapeLayer(selShape.id, { color: v })} />
-                <ToggleLine label="Fill on" value={selShape.fillEnabled} onChange={(v) => onUpdateShapeLayer(selShape.id, { fillEnabled: v })} />
-                <ColorRow label="Stroke" value={selShape.strokeColor} onChange={(v) => onUpdateShapeLayer(selShape.id, { strokeColor: v })} />
-                <SliderRow label="Stroke" value={selShape.strokeWidth} min={0} max={24} onChange={(v) => onUpdateShapeLayer(selShape.id, { strokeWidth: Math.round(v) })} suffix="px" />
-                <SliderRow label="Opacity" value={selShape.opacity} min={0} max={100} onChange={(v) => onUpdateShapeLayer(selShape.id, { opacity: Math.round(v) })} suffix="%" />
-                <BlendRow value={(selShape as { blendMode?: string }).blendMode ?? "source-over"} onChange={(v) => onBlendChange?.(selShape.id, v)} />
-                <ArrangeRow onMove={(d) => onMoveLayer?.(selShape.id, d)} />
-                <ToggleLine label="Visible" value={selShape.visible} onChange={(v) => onUpdateShapeLayer(selShape.id, { visible: v })} />
-              </GenericDesign>
-            ) : selSolid && onUpdateSolidLayer ? (
-              <GenericDesign title={selSolid.name} onDelete={() => onDeleteGeneric?.("solid", selSolid.id)}>
-                <ColorRow label="Color" value={selSolid.color} onChange={(v) => onUpdateSolidLayer(selSolid.id, { color: v })} />
-                <SliderRow label="Opacity" value={selSolid.opacity} min={0} max={100} onChange={(v) => onUpdateSolidLayer(selSolid.id, { opacity: Math.round(v) })} suffix="%" />
-                <BlendRow value={(selSolid as { blendMode?: string }).blendMode ?? "source-over"} onChange={(v) => onBlendChange?.(selSolid.id, v)} />
-                <ArrangeRow onMove={(d) => onMoveLayer?.(selSolid.id, d)} />
-                <ToggleLine label="Visible" value={selSolid.visible} onChange={(v) => onUpdateSolidLayer(selSolid.id, { visible: v })} />
-              </GenericDesign>
-            ) : (
-              <DesignTab
-                layer={selected}
-                onUpdateText={onUpdateText}
-                onDeleteText={onDeleteText}
-                onDuplicateText={onDuplicateText}
-                onAddText={onAddText}
-                hasAnyText={textLayers.length > 0}
-                onSelectText={onSelectText}
-                blendValue={(selected as { blendMode?: string } | null)?.blendMode ?? "source-over"}
-                onBlendChange={selected ? (v) => onBlendChange?.(selected.id, v) : undefined}
-                arrange={selected && onMoveLayer ? (d) => onMoveLayer(selected.id, d) : undefined}
-              />
-            )
-          ) : (
-            <DesignTab
-              layer={selected}
-              onUpdateText={onUpdateText}
-              onDeleteText={onDeleteText}
-              onDuplicateText={onDuplicateText}
-              onAddText={onAddText}
-              hasAnyText={textLayers.length > 0}
-              onSelectText={onSelectText}
-              blendValue={(selected as { blendMode?: string } | null)?.blendMode ?? "source-over"}
-              onBlendChange={selected ? (v) => onBlendChange?.((selected as { id: string }).id, v) : undefined}
-              arrange={selected && onMoveLayer ? (d) => onMoveLayer((selected as { id: string }).id, d) : undefined}
-            />
-          )
+          <DesignInspector
+            selected={selected}
+            selImg={selImg}
+            selShape={selShape}
+            selSolid={selSolid}
+            multiCount={selectedIds.length > 1 ? selectedIds.length : 0}
+            textLayers={textLayers}
+            onUpdateText={onUpdateText}
+            onDeleteText={onDeleteText}
+            onDuplicateText={onDuplicateText}
+            onAddText={onAddText}
+            onSelectText={onSelectText}
+            onUpdateImageLayer={onUpdateImageLayer}
+            onUpdateShapeLayer={onUpdateShapeLayer}
+            onUpdateSolidLayer={onUpdateSolidLayer}
+            onDeleteGeneric={onDeleteGeneric}
+            onDuplicateGeneric={onDuplicateGeneric}
+            onMoveLayer={onMoveLayer}
+            onBlendChange={onBlendChange}
+            onRename={onRename}
+            onAlign={onAlign}
+            onDistribute={onDistribute}
+            onGroup={onGroup}
+            docWidth={docWidth}
+            docHeight={docHeight}
+            hasImage={hasImage}
+            onOpenImage={onOpenImage}
+            onNewCanvas={onNewCanvas}
+            onShapeTool={onShapeTool}
+          />
         )}
         {activeTab === "adjustments" && (
           <AdjustmentsTab imageId={imageId} hasImage={hasImage} onApplyOperation={onApplyOperation} onBlendOpen={onBlendOpen} />
@@ -282,10 +256,33 @@ export default function RightPanel({
               <MiniNumber label="°" value={Math.round(selected.rotation)} onChange={(v) => onUpdateText(selected.id, { rotation: v })} />
             </div>
           </div>
+        ) : selImg && onUpdateImageLayer ? (
+          <FooterGeometry
+            name={selImg.name}
+            x={selImg.x} y={selImg.y} w={selImg.w} rotation={selImg.rotation}
+            onPatch={(p) => onUpdateImageLayer(selImg.id, p as Partial<ImageLayer>)}
+          />
+        ) : selShape && onUpdateShapeLayer ? (
+          <FooterGeometry
+            name={selShape.name}
+            x={selShape.x} y={selShape.y} w={selShape.w} rotation={selShape.rotation}
+            onPatch={(p) => onUpdateShapeLayer(selShape.id, p as Partial<ShapeLayer>)}
+          />
+        ) : selSolid ? (
+          <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
+            <p className="text-xs truncate" style={{ color: "var(--foreground)", minWidth: 0 }}>{selSolid.name}</p>
+            <p className="text-xs shrink-0 ml-2" style={{ color: "var(--accent)", fontSize: 10 }}>Fill · {selSolid.opacity}%</p>
+          </div>
+        ) : selectedIds.length > 1 ? (
+          <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
+            <p className="text-xs truncate" style={{ color: "var(--accent)", fontWeight: 600, minWidth: 0 }}>{selectedIds.length} layers selected</p>
+          </div>
         ) : (
           <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
             <p className="text-xs truncate" style={{ color: "var(--muted-foreground)", minWidth: 0 }}>
-              {textLayers.length === 0 ? "No text layers — press T then click canvas" : `${textLayers.length} text layer${textLayers.length > 1 ? "s" : ""} · select one to edit`}
+              {textLayers.length + imageLayers.length + shapeLayers.length + solidLayers.length === 0
+                ? "Empty canvas — open an image or add a layer"
+                : "Select any layer to edit its geometry here"}
             </p>
           </div>
         )}
@@ -690,6 +687,340 @@ function GenericDesign({ title, children, onDelete, onDuplicate }: { title: stri
         </div>
       </Section>
     </div>
+  );
+}
+
+function InspectorHeader({ icon, typeLabel, name, onRename }: {
+  icon: React.ReactNode;
+  typeLabel: string;
+  name: string;
+  onRename?: (name: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-3 pt-3 pb-2 w-full" style={{ minWidth: 0, borderBottom: "1px solid var(--border)" }}>
+      <div className="rounded shrink-0 flex items-center justify-center" style={{ width: 30, height: 30, background: "var(--secondary)", border: "1px solid var(--border)" }}>
+        {icon}
+      </div>
+      <div className="flex-1" style={{ minWidth: 0 }}>
+        <input
+          value={name}
+          onChange={(e) => onRename?.(e.target.value.slice(0, 40) || "Layer")}
+          spellCheck={false}
+          className="w-full bg-transparent outline-none truncate"
+          style={{ color: "var(--foreground)", fontSize: 13, fontWeight: 600, minWidth: 0 }}
+        />
+        <p style={{ color: "var(--muted-foreground)", fontSize: 11, margin: "1px 0 0" }}>{typeLabel}</p>
+      </div>
+    </div>
+  );
+}
+
+function GeometrySection({ x, y, w, h, rotation, onChange }: {
+  x: number; y: number; w: number; h: number; rotation: number;
+  onChange: (patch: { x?: number; y?: number; w?: number; h?: number; rotation?: number }) => void;
+}) {
+  return (
+    <Section title="Position & Size">
+      <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
+        <MiniNumber label="X%" value={Math.round(x * 100)} onChange={(v) => onChange({ x: v / 100 })} />
+        <MiniNumber label="Y%" value={Math.round(y * 100)} onChange={(v) => onChange({ y: v / 100 })} />
+        <MiniNumber label="W%" value={Math.round(w * 100)} onChange={(v) => onChange({ w: Math.max(2, v) / 100 })} />
+        <MiniNumber label="H%" value={Math.round(h * 100)} onChange={(v) => onChange({ h: Math.max(2, v) / 100 })} />
+      </div>
+      <SliderRow label="Rotation" value={Math.round(rotation)} min={-180} max={180} onChange={(v) => onChange({ rotation: Math.max(-180, Math.min(180, Math.round(v))) })} suffix="°" />
+    </Section>
+  );
+}
+
+function MultiSelectPanel({ count, onAlign, onDistribute, onGroup }: {
+  count: number;
+  onAlign?: (mode: "left" | "centerX" | "right" | "top" | "centerY" | "bottom") => void;
+  onDistribute?: (axis: "x" | "y") => void;
+  onGroup?: () => void;
+}) {
+  const btn: React.CSSProperties = { flex: 1, height: 30, borderRadius: 4, fontSize: 11, cursor: "pointer", background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", minWidth: 0 };
+  return (
+    <div className="py-2 px-3 flex flex-col gap-0 w-full" style={{ minWidth: 0 }}>
+      <Section title={`${count} layers selected`}>
+        <div className="flex gap-1 w-full" style={{ minWidth: 0 }}>
+          <button style={btn} title="Align left" onClick={() => onAlign?.("left")}>⇤</button>
+          <button style={btn} title="Align center" onClick={() => onAlign?.("centerX")}>⇔</button>
+          <button style={btn} title="Align right" onClick={() => onAlign?.("right")}>⇥</button>
+          <button style={btn} title="Align top" onClick={() => onAlign?.("top")}>⤒</button>
+          <button style={btn} title="Align middle" onClick={() => onAlign?.("centerY")}>⇕</button>
+          <button style={btn} title="Align bottom" onClick={() => onAlign?.("bottom")}>⤓</button>
+        </div>
+        <div className="flex gap-1.5 w-full" style={{ minWidth: 0 }}>
+          <button onClick={() => onDistribute?.("x")} className="flex-1 h-8 rounded text-xs" style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer", minWidth: 0 }}>Distribute ↔</button>
+          <button onClick={() => onDistribute?.("y")} className="flex-1 h-8 rounded text-xs" style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer", minWidth: 0 }}>Distribute ↕</button>
+          <button onClick={() => onGroup?.()} className="flex-1 h-8 rounded text-xs" style={{ background: "var(--accent)", color: "var(--accent-foreground)", border: "none", cursor: "pointer", fontWeight: 600, minWidth: 0 }}>Group</button>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function DocumentPanel({ docWidth, docHeight, hasImage, onOpenImage, onNewCanvas, onAddText, onShapeTool }: {
+  docWidth: number; docHeight: number; hasImage: boolean;
+  onOpenImage?: () => void; onNewCanvas?: () => void; onAddText?: () => void; onShapeTool?: () => void;
+}) {
+  const action: React.CSSProperties = { height: 36, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid var(--border)", minWidth: 0 };
+  return (
+    <div className="py-2 px-3 flex flex-col gap-0 w-full" style={{ minWidth: 0 }}>
+      <div className="flex items-center gap-2 px-0 pt-1 pb-2 w-full" style={{ minWidth: 0, borderBottom: "1px solid var(--border)" }}>
+        <div className="rounded shrink-0 flex items-center justify-center" style={{ width: 30, height: 30, background: "var(--secondary)", border: "1px solid var(--border)" }}>
+          <ImageIcon size={15} strokeWidth={1.75} style={{ color: "var(--accent)" }} />
+        </div>
+        <div className="flex-1" style={{ minWidth: 0 }}>
+          <p className="truncate" style={{ color: "var(--foreground)", fontSize: 13, fontWeight: 600, margin: 0 }}>Canvas</p>
+          <p style={{ color: "var(--muted-foreground)", fontSize: 11, margin: "1px 0 0" }}>
+            {hasImage && docWidth > 0 ? `${docWidth} × ${docHeight} px` : "Empty — nothing selected"}
+          </p>
+        </div>
+      </div>
+      <Section title="Document">
+        <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
+          <div className="rounded px-2 py-1.5" style={{ background: "var(--secondary)", border: "1px solid var(--border)", minWidth: 0 }}>
+            <p style={{ color: "var(--muted-foreground)", fontSize: 10, margin: 0 }}>Width</p>
+            <p className="tabular-nums" style={{ color: "var(--foreground)", fontSize: 13, margin: "2px 0 0" }}>{hasImage ? `${docWidth}px` : "—"}</p>
+          </div>
+          <div className="rounded px-2 py-1.5" style={{ background: "var(--secondary)", border: "1px solid var(--border)", minWidth: 0 }}>
+            <p style={{ color: "var(--muted-foreground)", fontSize: 10, margin: 0 }}>Height</p>
+            <p className="tabular-nums" style={{ color: "var(--foreground)", fontSize: 13, margin: "2px 0 0" }}>{hasImage ? `${docHeight}px` : "—"}</p>
+          </div>
+        </div>
+      </Section>
+      <Section title="Insert">
+        <div className="flex flex-col gap-1.5" style={{ minWidth: 0 }}>
+          <button onClick={onOpenImage} style={{ ...action, background: "var(--primary)", color: "var(--primary-foreground)", border: "none" }}>Open image…</button>
+          <div className="flex gap-1.5" style={{ minWidth: 0 }}>
+            <button onClick={onAddText} style={{ ...action, flex: 1, background: "var(--secondary)", color: "var(--foreground)" }}>Text (T)</button>
+            <button onClick={onShapeTool} style={{ ...action, flex: 1, background: "var(--secondary)", color: "var(--foreground)" }}>Shape (U)</button>
+          </div>
+          <button onClick={onNewCanvas} style={{ ...action, background: "transparent", color: "var(--muted-foreground)" }}>New empty canvas</button>
+        </div>
+      </Section>
+      <Section title="Tips">
+        <p className="text-xs" style={{ color: "var(--muted-foreground)", lineHeight: 1.7, fontSize: 11, margin: 0 }}>
+          Click any object on the canvas or a row in Layers — its full properties appear here, Figma-style.
+        </p>
+      </Section>
+    </div>
+  );
+}
+
+function DesignInspector(props: {
+  selected: TextLayer | null;
+  selImg: ImageLayer | null;
+  selShape: ShapeLayer | null;
+  selSolid: SolidLayer | null;
+  multiCount: number;
+  textLayers: TextLayer[];
+  onUpdateText?: (id: string, patch: Partial<TextLayer>) => void;
+  onDeleteText?: (id: string) => void;
+  onDuplicateText?: (id: string) => void;
+  onAddText?: () => void;
+  onSelectText?: (id: string | null) => void;
+  onUpdateImageLayer?: (id: string, patch: Partial<ImageLayer>) => void;
+  onUpdateShapeLayer?: (id: string, patch: Partial<ShapeLayer>) => void;
+  onUpdateSolidLayer?: (id: string, patch: Partial<SolidLayer>) => void;
+  onDeleteGeneric?: (kind: string, id: string) => void;
+  onDuplicateGeneric?: (kind: string, id: string) => void;
+  onMoveLayer?: (id: string, dir: "front" | "back" | "forward" | "backward") => void;
+  onBlendChange?: (id: string, blend: string) => void;
+  onRename?: (id: string, name: string) => void;
+  onAlign?: (mode: "left" | "centerX" | "right" | "top" | "centerY" | "bottom") => void;
+  onDistribute?: (axis: "x" | "y") => void;
+  onGroup?: () => void;
+  docWidth: number;
+  docHeight: number;
+  hasImage: boolean;
+  onOpenImage?: () => void;
+  onNewCanvas?: () => void;
+  onShapeTool?: () => void;
+}) {
+  const { selected, selImg, selShape, selSolid, multiCount } = props;
+  if (multiCount > 1) {
+    return <MultiSelectPanel count={multiCount} onAlign={props.onAlign} onDistribute={props.onDistribute} onGroup={props.onGroup} />;
+  }
+  if (selImg && props.onUpdateImageLayer) {
+    const up = (patch: Partial<ImageLayer>) => props.onUpdateImageLayer!(selImg.id, patch);
+    return (
+      <div className="w-full" style={{ minWidth: 0 }}>
+        <InspectorHeader
+          icon={<ImageIcon size={15} strokeWidth={1.75} style={{ color: "#7FB8FF" }} />}
+          typeLabel="Image layer"
+          name={selImg.name}
+          onRename={(n) => props.onRename?.(selImg.id, n)}
+        />
+        <div className="py-2 px-3 w-full" style={{ minWidth: 0 }}>
+          <GeometrySection
+            x={selImg.x} y={selImg.y} w={selImg.w} h={selImg.h} rotation={selImg.rotation}
+            onChange={(p) => up({
+              ...(p.x !== undefined ? { x: p.x } : {}),
+              ...(p.y !== undefined ? { y: p.y } : {}),
+              ...(p.w !== undefined ? { w: p.w } : {}),
+              ...(p.h !== undefined ? { h: p.h } : {}),
+              ...(p.rotation !== undefined ? { rotation: p.rotation } : {}),
+            })}
+          />
+          <Section title="Appearance">
+            <SliderRow label="Opacity" value={selImg.opacity} min={0} max={100} onChange={(v) => up({ opacity: Math.round(v) })} suffix="%" />
+            <BlendRow value={selImg.blendMode ?? "source-over"} onChange={(v) => props.onBlendChange?.(selImg.id, v)} />
+          </Section>
+          <Section title="Layer">
+            <ArrangeRow onMove={(d) => props.onMoveLayer?.(selImg.id, d)} />
+            <div className="flex gap-1.5 mt-1.5">
+              <div className="flex-1"><ToggleLine label="Visible" value={selImg.visible} onChange={(v) => up({ visible: v })} /></div>
+              <div className="flex-1"><ToggleLine label="Locked" value={selImg.locked} onChange={(v) => up({ locked: v })} /></div>
+            </div>
+            <div className="flex gap-1.5 mt-2">
+              <button onClick={() => props.onDuplicateGeneric?.("image", selImg.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer" }}>Duplicate</button>
+              <button onClick={() => props.onDeleteGeneric?.("image", selImg.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>Delete</button>
+            </div>
+          </Section>
+        </div>
+      </div>
+    );
+  }
+  if (selShape && props.onUpdateShapeLayer) {
+    const up = (patch: Partial<ShapeLayer>) => props.onUpdateShapeLayer!(selShape.id, patch);
+    const kinds = [
+      { k: "rect", label: "Rect" },
+      { k: "ellipse", label: "Ellipse" },
+      { k: "line", label: "Line" },
+      { k: "arrow", label: "Arrow" },
+    ] as const;
+    return (
+      <div className="w-full" style={{ minWidth: 0 }}>
+        <InspectorHeader
+          icon={<span style={{ fontSize: 14 }}>⬢</span>}
+          typeLabel={`${selShape.shape === "rect" ? "Rectangle" : selShape.shape === "ellipse" ? "Ellipse" : selShape.shape === "line" ? "Line" : "Arrow"} shape`}
+          name={selShape.name}
+          onRename={(n) => props.onRename?.(selShape.id, n)}
+        />
+        <div className="py-2 px-3 w-full" style={{ minWidth: 0 }}>
+          <Section title="Shape">
+            <div className="flex gap-1 w-full" style={{ minWidth: 0 }}>
+              {kinds.map((s) => (
+                <button
+                  key={s.k}
+                  onClick={() => up({ shape: s.k })}
+                  className="flex-1 h-8 rounded text-xs"
+                  style={{
+                    background: selShape.shape === s.k ? "var(--accent)" : "var(--secondary)",
+                    color: selShape.shape === s.k ? "var(--accent-foreground)" : "var(--muted-foreground)",
+                    border: "1px solid var(--border)",
+                    cursor: "pointer",
+                    fontWeight: selShape.shape === s.k ? 600 : 400,
+                    minWidth: 0,
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </Section>
+          <GeometrySection
+            x={selShape.x} y={selShape.y} w={selShape.w} h={selShape.h} rotation={selShape.rotation}
+            onChange={(p) => up({
+              ...(p.x !== undefined ? { x: p.x } : {}),
+              ...(p.y !== undefined ? { y: p.y } : {}),
+              ...(p.w !== undefined ? { w: p.w } : {}),
+              ...(p.h !== undefined ? { h: p.h } : {}),
+              ...(p.rotation !== undefined ? { rotation: p.rotation } : {}),
+            })}
+          />
+          <Section title="Fill & Stroke">
+            <ColorRow label="Fill" value={selShape.color} onChange={(v) => up({ color: v })} />
+            <ToggleLine label="Fill on" value={selShape.fillEnabled} onChange={(v) => up({ fillEnabled: v })} />
+            <ColorRow label="Stroke" value={selShape.strokeColor} onChange={(v) => up({ strokeColor: v })} />
+            <SliderRow label="Stroke width" value={selShape.strokeWidth} min={0} max={24} onChange={(v) => up({ strokeWidth: Math.round(v) })} suffix="px" />
+          </Section>
+          <Section title="Appearance">
+            <SliderRow label="Opacity" value={selShape.opacity} min={0} max={100} onChange={(v) => up({ opacity: Math.round(v) })} suffix="%" />
+            <BlendRow value={selShape.blendMode ?? "source-over"} onChange={(v) => props.onBlendChange?.(selShape.id, v)} />
+          </Section>
+          <Section title="Layer">
+            <ArrangeRow onMove={(d) => props.onMoveLayer?.(selShape.id, d)} />
+            <div className="flex gap-1.5 mt-1.5">
+              <div className="flex-1"><ToggleLine label="Visible" value={selShape.visible} onChange={(v) => up({ visible: v })} /></div>
+              <div className="flex-1"><ToggleLine label="Locked" value={selShape.locked} onChange={(v) => up({ locked: v })} /></div>
+            </div>
+            <div className="flex gap-1.5 mt-2">
+              <button onClick={() => props.onDuplicateGeneric?.("shape", selShape.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer" }}>Duplicate</button>
+              <button onClick={() => props.onDeleteGeneric?.("shape", selShape.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>Delete</button>
+            </div>
+          </Section>
+        </div>
+      </div>
+    );
+  }
+  if (selSolid && props.onUpdateSolidLayer) {
+    const up = (patch: Partial<SolidLayer>) => props.onUpdateSolidLayer!(selSolid.id, patch);
+    return (
+      <div className="w-full" style={{ minWidth: 0 }}>
+        <InspectorHeader
+          icon={<span style={{ width: 14, height: 14, borderRadius: 4, background: selSolid.color, display: "inline-block" }} />}
+          typeLabel="Solid fill"
+          name={selSolid.name}
+          onRename={(n) => props.onRename?.(selSolid.id, n)}
+        />
+        <div className="py-2 px-3 w-full" style={{ minWidth: 0 }}>
+          <Section title="Fill">
+            <ColorRow label="Color" value={selSolid.color} onChange={(v) => up({ color: v })} />
+            <SliderRow label="Opacity" value={selSolid.opacity} min={0} max={100} onChange={(v) => up({ opacity: Math.round(v) })} suffix="%" />
+            <BlendRow value={selSolid.blendMode ?? "source-over"} onChange={(v) => props.onBlendChange?.(selSolid.id, v)} />
+          </Section>
+          <Section title="Layer">
+            <ArrangeRow onMove={(d) => props.onMoveLayer?.(selSolid.id, d)} />
+            <div className="flex gap-1.5 mt-1.5">
+              <div className="flex-1"><ToggleLine label="Visible" value={selSolid.visible} onChange={(v) => up({ visible: v })} /></div>
+              <div className="flex-1"><ToggleLine label="Locked" value={selSolid.locked} onChange={(v) => up({ locked: v })} /></div>
+            </div>
+            <div className="flex gap-1.5 mt-2">
+              <button onClick={() => props.onDuplicateGeneric?.("solid", selSolid.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer" }}>Duplicate</button>
+              <button onClick={() => props.onDeleteGeneric?.("solid", selSolid.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>Delete</button>
+            </div>
+          </Section>
+        </div>
+      </div>
+    );
+  }
+  if (selected && props.onUpdateText) {
+    return (
+      <div className="w-full" style={{ minWidth: 0 }}>
+        <InspectorHeader
+          icon={<Type size={15} strokeWidth={1.75} style={{ color: "var(--accent)" }} />}
+          typeLabel="Text layer"
+          name={selected.name}
+          onRename={(n) => props.onRename?.(selected.id, n)}
+        />
+        <DesignTab
+          layer={selected}
+          onUpdateText={props.onUpdateText}
+          onDeleteText={props.onDeleteText}
+          onDuplicateText={props.onDuplicateText}
+          onAddText={props.onAddText}
+          hasAnyText={props.textLayers.length > 0}
+          onSelectText={props.onSelectText}
+          blendValue={(selected as { blendMode?: string } | null)?.blendMode ?? "source-over"}
+          onBlendChange={(v) => props.onBlendChange?.(selected.id, v)}
+          arrange={props.onMoveLayer ? (d) => props.onMoveLayer!(selected.id, d) : undefined}
+        />
+      </div>
+    );
+  }
+  return (
+    <DocumentPanel
+      docWidth={props.docWidth}
+      docHeight={props.docHeight}
+      hasImage={props.hasImage}
+      onOpenImage={props.onOpenImage}
+      onNewCanvas={props.onNewCanvas}
+      onAddText={props.onAddText}
+      onShapeTool={props.onShapeTool}
+    />
   );
 }
 
@@ -1437,6 +1768,28 @@ function Slider({ min, max, value, step = 1, onChange }: { min: number; max: num
           background: transparent;
         }
       `}</style>
+    </div>
+  );
+}
+
+function FooterGeometry({ name, x, y, w, rotation, onPatch }: {
+  name: string; x: number; y: number; w: number; rotation: number;
+  onPatch: (p: { x?: number; y?: number; w?: number; rotation?: number }) => void;
+}) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div className="flex items-center justify-between mb-2" style={{ minWidth: 0 }}>
+        <p className="text-xs font-medium truncate" style={{ color: "var(--foreground)", minWidth: 0 }}>{name}</p>
+        <span className="text-xs shrink-0 ml-2" style={{ color: "var(--accent)", fontSize: 10 }}>
+          {Math.round(x * 100)},{Math.round(y * 100)} · {Math.round(rotation)}°
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5" style={{ minWidth: 0 }}>
+        <MiniNumber label="X%" value={Math.round(x * 100)} onChange={(v) => onPatch({ x: v / 100 })} />
+        <MiniNumber label="Y%" value={Math.round(y * 100)} onChange={(v) => onPatch({ y: v / 100 })} />
+        <MiniNumber label="W%" value={Math.round(w * 100)} onChange={(v) => onPatch({ w: Math.max(2, v) / 100 })} />
+        <MiniNumber label="°" value={Math.round(rotation)} onChange={(v) => onPatch({ rotation: Math.max(-180, Math.min(180, Math.round(v))) })} />
+      </div>
     </div>
   );
 }

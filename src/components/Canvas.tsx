@@ -393,6 +393,23 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         const wpx = Math.max(4, s.w * box.w);
         const hpx = Math.max(4, s.h * box.h);
         let obj = shapeMap.current.get(s.id);
+        if (obj) {
+          const want = s.shape;
+          const matches =
+            (want === "ellipse" && obj instanceof Ellipse) ||
+            ((want === "line" || want === "arrow") && obj instanceof Line) ||
+            (want === "rect" && obj instanceof Rect);
+          if (!matches) {
+            try {
+              if (fc.getActiveObject() === obj) fc.discardActiveObject();
+              fc.remove(obj);
+            } catch {
+              /* ignore */
+            }
+            shapeMap.current.delete(s.id);
+            obj = undefined;
+          }
+        }
         if (!obj) {
           try {
             if (s.shape === "ellipse") obj = new Ellipse({ left, top, rx: wpx / 2, ry: hpx / 2 });

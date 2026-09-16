@@ -628,7 +628,7 @@ export default function App() {
       setSelectedLayer({ kind: "shape", id: layer.id });
       setSelectedTextId(null);
       setSelectedIds([layer.id]);
-      setRightTab("layers");
+      setRightTab("design");
       setActiveTool("select");
       pushHistory(shape === "ellipse" ? "Draw ellipse" : "Draw rectangle", { shapeLayers: next });
     },
@@ -1459,6 +1459,7 @@ export default function App() {
                 if (id) {
                   setSelectedLayer({ kind: "text", id });
                   setSelectedIds([id]);
+                  setRightTab("design");
                 } else {
                   setSelectedLayer(null);
                   setSelectedIds([]);
@@ -1480,6 +1481,7 @@ export default function App() {
                 setSelectedLayer(sel);
                 setSelectedTextId(sel && sel.kind === "text" ? sel.id : null);
                 setSelectedIds(sel ? [sel.id] : []);
+                if (sel) setRightTab("design");
               }}
               onUpdateImageLayer={(id, patch) => setImageLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)))}
               onUpdateShapeLayer={(id, patch) => setShapeLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)))}
@@ -1564,6 +1566,11 @@ export default function App() {
                   onAlign={handleAlign}
                   onDistribute={handleDistribute}
                   onRename={handleRenameLayer}
+                  docWidth={canvasImage?.width ?? 0}
+                  docHeight={canvasImage?.height ?? 0}
+                  onOpenImage={handleOpen}
+                  onNewCanvas={handleNew}
+                  onShapeTool={() => setActiveTool("shape")}
                 />
               </Panel>
             </>
