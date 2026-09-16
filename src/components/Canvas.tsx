@@ -189,6 +189,7 @@ function StarterOverlay({ docLabel, onAction }: {
           border: "1px solid var(--border)",
           boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
           width: 280,
+          maxWidth: "calc(100% - 32px)",
           pointerEvents: "auto",
         }}
       >

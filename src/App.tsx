@@ -1637,7 +1637,7 @@ export default function App() {
                 />
               </Separator>
 
-              <Panel defaultSize={34} minSize={22} maxSize={55} style={{ minWidth: 0, overflow: "hidden" }}>
+              <Panel defaultSize={34} minSize={26} maxSize={60} style={{ minWidth: 272, overflow: "hidden" }}>
                 <RightPanel
                   imageId={canvasImage?.imageId}
                   hasImage={canvasImage !== null}

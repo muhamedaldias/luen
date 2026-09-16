@@ -134,8 +134,9 @@ export default function RightPanel({
   return (
     <div
       className="flex flex-col h-full w-full overflow-hidden"
-      style={{ background: "var(--card)", borderLeft: "1px solid var(--border)", minWidth: 0 }}
+      style={{ background: "var(--card)", borderLeft: "1px solid var(--border)", minWidth: 0, overflowWrap: "break-word", containerType: "inline-size" }}
     >
+      <style>{`@container (max-width: 320px) { .rp-tab-label { display: none; } }`}</style>
       <div
         className="flex items-center gap-0 px-1 pt-1 shrink-0 w-full"
         style={{ borderBottom: "1px solid var(--border)", minWidth: 0, overflowX: "auto" }}
@@ -156,7 +157,7 @@ export default function RightPanel({
             title={tab.label}
           >
             {tab.icon}
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{tab.label}</span>
+            <span className="rp-tab-label" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{tab.label}</span>
             {activeTab === tab.id && (
               <div className="absolute bottom-0 left-2 right-2 h-px" style={{ background: "var(--accent)" }} />
             )}
@@ -488,7 +489,7 @@ function LayersTab({
       </div>
 
       {multi && (
-        <div className="px-2 py-1.5 flex flex-wrap items-center gap-1" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="px-2 py-1.5 flex items-center gap-1" style={{ borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
           <span className="text-xs" style={{ color: "var(--accent)", fontWeight: 600 }}>{selectedIds.length} selected</span>
           <button onClick={() => onAlign?.("left")} title="Align left" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer" }}>⇤</button>
           <button onClick={() => onAlign?.("centerX")} title="Align center" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer" }}>⇔</button>
@@ -742,7 +743,7 @@ function MultiSelectPanel({ count, onAlign, onDistribute, onGroup }: {
   return (
     <div className="py-2 px-3 flex flex-col gap-0 w-full" style={{ minWidth: 0 }}>
       <Section title={`${count} layers selected`}>
-        <div className="flex gap-1 w-full" style={{ minWidth: 0 }}>
+        <div className="flex gap-1 w-full" style={{ minWidth: 0, flexWrap: "wrap" }}>
           <button style={btn} title="Align left" onClick={() => onAlign?.("left")}>⇤</button>
           <button style={btn} title="Align center" onClick={() => onAlign?.("centerX")}>⇔</button>
           <button style={btn} title="Align right" onClick={() => onAlign?.("right")}>⇥</button>
