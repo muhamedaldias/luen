@@ -12,10 +12,12 @@ import { uploadImage, runAndWait, resolveUrl } from "./lib/api";
 import { createTextLayer, type TextLayer } from "./lib/textLayers";
 import { exportFlattenedDataUrl } from "./lib/exportComposite";
 import { toCleanDataUrlBestEffort } from "./lib/safeImage";
+import { downloadProject, readProjectFile } from "./lib/projectFile";
 import { applyLocalOp, getNaturalSize } from "./lib/localOps";
 import MenuDialog, { type DialogKind } from "./components/MenuDialog";
 import MaskEditor from "./components/MaskEditor";
 import NewLayerDialog, { type NewLayerChoice } from "./components/NewLayerDialog";
+import NewCanvasDialog, { type NewCanvasOpts } from "./components/NewCanvasDialog";
 import BlendDialog from "./components/BlendDialog";
 import { createImageLayer, createShapeLayer, createSolidLayer, type ImageLayer, type ShapeLayer, type SolidLayer } from "./lib/layers";
 import {
@@ -127,8 +129,12 @@ export default function App() {
   const [menuDialog, setMenuDialog] = useState<DialogKind | null>(null);
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
   const [newLayerOpen, setNewLayerOpen] = useState(false);
+  const [newCanvasOpen, setNewCanvasOpen] = useState(false);
+  const [docSize, setDocSize] = useState({ w: 1200, h: 800 });
   const [blendOpen, setBlendOpen] = useState(false);
   const [shapeKind, setShapeKind] = useState<"rect" | "ellipse">("rect");
+  const [showGrid, setShowGrid] = useState(false);
+  const [showRulers, setShowRulers] = useState(true);
 
   // ── Undo/Redo: لقطات Memento بحد تكيّفي حسب حجم الصورة (انظر lib/history.ts) ──
   const [history, setHistory] = useState<HistoryEntry[]>([emptyEntry("Open")]);
@@ -251,6 +257,10 @@ export default function App() {
         } else {
           setActiveTool("shape");
         }
+      } else if (k === "g") {
+        setShowGrid((v) => !v);
+      } else if (k === "r") {
+        setShowRulers((v) => !v);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -843,8 +853,8 @@ export default function App() {
     try {
       const dataUrl = await exportFlattenedDataUrl({
         imageUrl: current?.url ?? null,
-        width: current?.width ?? 0,
-        height: current?.height ?? 0,
+        width: current?.width ?? docSize.w,
+        height: current?.height ?? docSize.h,
         textLayers: layersRef.current,
         imageLayers: imageLayersRef.current,
         shapeLayers: shapeLayersRef.current,
@@ -1295,8 +1305,8 @@ export default function App() {
       const fresh = imageRef.current;
       const dataUrl = await exportFlattenedDataUrl({
         imageUrl: fresh?.url ?? null,
-        width: fresh?.width ?? 0,
-        height: fresh?.height ?? 0,
+        width: fresh?.width ?? docSize.w,
+        height: fresh?.height ?? docSize.h,
         textLayers: layersRef.current,
         imageLayers: imageLayersRef.current,
         shapeLayers: shapeLayersRef.current,
@@ -1320,6 +1330,68 @@ export default function App() {
 
   function handleSave() {
     void downloadCurrentImage("lumen-image.png");
+  }
+
+  function handleSaveProject() {
+    try {
+      downloadProject({
+        docSize,
+        image: imageRef.current ? { ...imageRef.current } : null,
+        textLayers: cloneLayers(layersRef.current),
+        imageLayers: cloneLayers(imageLayersRef.current),
+        shapeLayers: cloneLayers(shapeLayersRef.current),
+        solidLayers: cloneLayers(solidLayersRef.current),
+        order: [...orderRef.current],
+        groups: { ...groupsRef.current },
+      });
+    } catch {
+      setLoadError("Could not save project file");
+    }
+  }
+
+  function handleOpenProject() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".lumen,application/json";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      void (async () => {
+        setBusy(`Opening ${file.name}…`);
+        setLoadError(null);
+        try {
+          const p = await readProjectFile(file);
+          setCanvasImage(p.image ? { ...p.image } : null);
+          setTextLayers(cloneLayers(p.textLayers));
+          setImageLayers(cloneLayers(p.imageLayers));
+          setShapeLayers(cloneLayers(p.shapeLayers));
+          setSolidLayers(cloneLayers(p.solidLayers));
+          setLayerOrder([...p.order]);
+          setGroupNames({ ...p.groups });
+          setDocSize({ ...p.docSize });
+          setSelectedTextId(null);
+          setSelectedLayer(null);
+          setSelectedIds([]);
+          setRightTab("layers");
+          setZoom(100);
+          await stageRef.current?.setStrokes([]).catch(() => undefined);
+          pushHistory(`Open ${file.name}`, {
+            image: p.image ? { ...p.image } : null,
+            layers: cloneLayers(p.textLayers),
+            imageLayers: cloneLayers(p.imageLayers),
+            shapeLayers: cloneLayers(p.shapeLayers),
+            solidLayers: cloneLayers(p.solidLayers),
+            order: [...p.order],
+            groups: { ...p.groups },
+          });
+        } catch (e) {
+          setLoadError(e instanceof Error ? e.message : "Could not open project");
+        } finally {
+          setBusy(null);
+        }
+      })();
+    };
+    input.click();
   }
 
   function handleExport() {
@@ -1352,6 +1424,26 @@ export default function App() {
     setZoom(100);
     void stageRef.current?.setStrokes([]).catch(() => undefined);
     pushHistory("New canvas", { image: null, layers: [], imageLayers: [], shapeLayers: [], solidLayers: [], order: [], groups: {} });
+  }
+
+  function handleNewCanvasConfirm(opts: NewCanvasOpts) {
+    setNewCanvasOpen(false);
+    setCanvasImage(null);
+    setTextLayers([]);
+    setImageLayers([]);
+    setShapeLayers([]);
+    const bg = opts.background ? [createSolidLayer({ color: opts.background, name: "Background" })] : [];
+    setSolidLayers(bg);
+    setSelectedTextId(null);
+    setSelectedLayer(bg.length ? { kind: "solid", id: bg[0].id } : null);
+    setSelectedIds(bg.length ? [bg[0].id] : []);
+    setLayerOrder([]);
+    setGroupNames({});
+    setLoadError(null);
+    setZoom(100);
+    setDocSize({ w: opts.width, h: opts.height });
+    void stageRef.current?.setStrokes([]).catch(() => undefined);
+    pushHistory("New canvas", { image: null, layers: [], imageLayers: [], shapeLayers: [], solidLayers: bg, order: [], groups: {} });
   }
 
   const handleEditCommit = useCallback(
@@ -1391,7 +1483,9 @@ export default function App() {
         onSave={handleSave}
         onExport={handleExport}
         onOpen={handleOpen}
-        onNew={handleNew}
+        onNew={() => setNewCanvasOpen(true)}
+        onSaveProject={handleSaveProject}
+        onOpenProject={handleOpenProject}
         onRemoveBackground={() => void handleRemoveBackground()}
         onMenuAction={handleMenuAction}
       />
@@ -1472,6 +1566,8 @@ export default function App() {
               onSmartSelect={() => void handleRemoveBackground()}
               shapeKind={shapeKind}
               onShapeDraw={handleShapeDraw}
+              showGrid={showGrid}
+              showRulers={showRulers}
               imageLayers={imageLayers}
               shapeLayers={shapeLayers}
               solidLayers={solidLayers}
@@ -1569,7 +1665,7 @@ export default function App() {
                   docWidth={canvasImage?.width ?? 0}
                   docHeight={canvasImage?.height ?? 0}
                   onOpenImage={handleOpen}
-                  onNewCanvas={handleNew}
+                  onNewCanvas={() => setNewCanvasOpen(true)}
                   onShapeTool={() => setActiveTool("shape")}
                 />
               </Panel>
@@ -1687,8 +1783,12 @@ export default function App() {
 
       <BottomBar
         zoom={zoom}
-        width={canvasImage?.width ?? 0}
-        height={canvasImage?.height ?? 0}
+        width={canvasImage?.width ?? docSize.w}
+        height={canvasImage?.height ?? docSize.h}
+        showGrid={showGrid}
+        showRulers={showRulers}
+        onToggleGrid={() => setShowGrid((v) => !v)}
+        onToggleRulers={() => setShowRulers((v) => !v)}
         saveState={saveState}
         activeTool={toolLabels[activeTool]}
       />
@@ -1722,6 +1822,10 @@ export default function App() {
 
       {newLayerOpen && (
         <NewLayerDialog onClose={() => setNewLayerOpen(false)} onPick={handleNewLayerPick} />
+      )}
+
+      {newCanvasOpen && (
+        <NewCanvasDialog onClose={() => setNewCanvasOpen(false)} onConfirm={handleNewCanvasConfirm} />
       )}
 
       {blendOpen && (

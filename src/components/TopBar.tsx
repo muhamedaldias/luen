@@ -7,7 +7,7 @@ const menus: { key: MenuKey; label: string; items: string[] }[] = [
   {
     key: "file",
     label: "File",
-    items: ["New…", "Open…", "Open Recent", "—", "Save", "Save As…", "Export As…", "—", "Close"],
+    items: ["New…", "Open…", "Open Project…", "Open Recent", "—", "Save", "Save As…", "Export As…", "Save Project…", "—", "Close"],
   },
   {
     key: "edit",
@@ -67,11 +67,13 @@ interface TopBarProps {
   onExport?: () => void;
   onOpen?: () => void;
   onNew?: () => void;
+  onSaveProject?: () => void;
+  onOpenProject?: () => void;
   onRemoveBackground?: () => void;
   onMenuAction?: (item: string) => void;
 }
 
-export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRedo, saveState = "saved", onSettingsOpen, onSave, onExport, onOpen, onNew, onRemoveBackground, onMenuAction }: TopBarProps) {
+export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRedo, saveState = "saved", onSettingsOpen, onSave, onExport, onOpen, onNew, onSaveProject, onOpenProject, onRemoveBackground, onMenuAction }: TopBarProps) {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -94,6 +96,12 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
       case "Open…":
       case "Open Recent":
         onOpen?.();
+        break;
+      case "Open Project…":
+        onOpenProject?.();
+        break;
+      case "Save Project…":
+        onSaveProject?.();
         break;
       case "Save":
       case "Save As…":

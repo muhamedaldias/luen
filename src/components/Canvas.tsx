@@ -37,6 +37,8 @@ interface CanvasProps {
   onSelectMany?: (ids: string[]) => void;
   shapeKind?: "rect" | "ellipse";
   onShapeDraw?: (shape: "rect" | "ellipse", geom: { x: number; y: number; w: number; h: number }) => void;
+  showGrid?: boolean;
+  showRulers?: boolean;
 }
 
 export interface FabricStageHandle {
@@ -65,6 +67,73 @@ const BRUSH_COLOR = "#C97B4A";
 const BRUSH_SIZE = 4;
 const BOARD_W = 900;
 const BOARD_H = 600;
+const RULER = 22;
+const SNAP_PX = 8;
+
+interface FracBox {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** انجذاب حواف/مركز الكائن المسحوب لأطراف اللوحة وطبقات أخرى (كسور نسبية). */
+function snapFractions(self: FracBox, others: FracBox[], threshX: number, threshY: number): { x: number; y: number } {
+  const tx = [0, 0.5, 1];
+  const ty = [0, 0.5, 1];
+  for (const o of others) {
+    if (o.id === self.id) continue;
+    tx.push(o.x, o.x + o.w / 2, o.x + o.w);
+    ty.push(o.y, o.y + o.h / 2, o.y + o.h);
+  }
+  let bx = self.x;
+  let bd = threshX;
+  for (const off of [0, self.w / 2, self.w]) {
+    for (const t of tx) {
+      const d = Math.abs(self.x + off - t);
+      if (d < bd) {
+        bd = d;
+        bx = t - off;
+      }
+    }
+  }
+  let by = self.y;
+  let bdy = threshY;
+  for (const off of [0, self.h / 2, self.h]) {
+    for (const t of ty) {
+      const d = Math.abs(self.y + off - t);
+      if (d < bdy) {
+        bdy = d;
+        by = t - off;
+      }
+    }
+  }
+  return { x: Math.round(bx * 10000) / 10000, y: Math.round(by * 10000) / 10000 };
+}
+
+function Rulers({ box }: { box: { x: number; y: number; w: number; h: number } }) {
+  const ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  return (
+    <>
+      <div style={{ position: "absolute", top: 0, left: RULER, right: 0, height: RULER, pointerEvents: "none", zIndex: 6, background: "var(--card)", borderBottom: "1px solid var(--border)", overflow: "hidden" }}>
+        {ticks.map((i) => (
+          <div key={i} style={{ position: "absolute", left: Math.max(0, box.x + (box.w * i) / 10), top: 0, bottom: 0, borderLeft: "1px solid var(--border)" }}>
+            {i % 5 === 0 && (
+              <span style={{ fontSize: 9, color: "var(--muted-foreground)", marginLeft: 3, lineHeight: `${RULER}px` }}>{i * 10}%</span>
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", top: RULER, left: 0, bottom: 0, width: RULER, pointerEvents: "none", zIndex: 6, background: "var(--card)", borderRight: "1px solid var(--border)", overflow: "hidden" }}>
+        {ticks.map((i) => (
+          <div key={i} style={{ position: "absolute", top: Math.max(0, box.y + (box.h * i) / 10 - RULER), left: 0, right: 0, borderTop: "1px solid var(--border)" }} />
+        ))}
+      </div>
+      <div style={{ position: "absolute", top: 0, left: 0, width: RULER, height: RULER, zIndex: 7, background: "var(--card)", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }} />
+    </>
+  );
+}
 
 const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props, ref) {
   const {
@@ -96,11 +165,14 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     layerOrder,
     shapeKind = "rect",
     onShapeDraw,
+    showGrid = false,
+    showRulers = true,
   } = props;
 
   const [draggingOver, setDraggingOver] = useState(false);
   const [imgError, setImgError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [boardBox, setBoardBox] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -207,6 +279,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     const dw = bw * s;
     const dh = bh * s;
     v.box = { x: (r.width - dw) / 2, y: (r.height - dh) / 2, w: dw, h: dh };
+    setBoardBox({ ...v.box });
     if (bgRef.current && v.natW > 0) {
       bgRef.current.set({ left: v.box.x, top: v.box.y, scaleX: v.box.w / v.natW, scaleY: v.box.h / v.natH });
       bgRef.current.setCoords();
@@ -1129,10 +1202,29 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           // للخطوط: العرض من المسافة بين النقطتين
           let wFrac = Math.min(1.2, Math.max(0.02, wPx / Math.max(1, box.w)));
           let hFrac = Math.min(1.2, Math.max(0.02, hPx / Math.max(1, box.h)));
+          const selfId = id as string;
+          const others: FracBox[] = [
+            ...layersRef.current.filter((l) => l.visible !== false).map((l) => ({ id: l.id, x: l.x, y: l.y, w: l.w, h: 0.12 })),
+            ...imageLayersRef.current.filter((l) => l.visible !== false).map((l) => ({ id: l.id, x: l.x, y: l.y, w: l.w, h: l.h })),
+            ...shapeLayersRef.current.filter((l) => l.visible !== false).map((l) => ({ id: l.id, x: l.x, y: l.y, w: l.w, h: l.h })),
+          ];
+          const sn = snapFractions(
+            { id: selfId, x: nx, y: ny, w: wFrac, h: hFrac },
+            others,
+            SNAP_PX / Math.max(1, box.w),
+            SNAP_PX / Math.max(1, box.h)
+          );
+          try {
+            (t as unknown as { left?: number }).left = box.x + sn.x * box.w;
+            (t as unknown as { top?: number }).top = box.y + sn.y * box.h;
+            (t as unknown as FabricObject).setCoords();
+          } catch {
+            /* ignore */
+          }
           if (kind === "image") {
-            handlersRef.current.onUpdateImageLayer?.(id as string, { x: nx, y: ny, w: Math.round(wFrac * 1000) / 1000, h: Math.round(hFrac * 1000) / 1000, rotation: rot });
+            handlersRef.current.onUpdateImageLayer?.(id as string, { x: sn.x, y: sn.y, w: Math.round(wFrac * 1000) / 1000, h: Math.round(hFrac * 1000) / 1000, rotation: rot });
           } else {
-            handlersRef.current.onUpdateShapeLayer?.(id as string, { x: nx, y: ny, w: Math.round(wFrac * 1000) / 1000, h: Math.round(hFrac * 1000) / 1000, rotation: rot });
+            handlersRef.current.onUpdateShapeLayer?.(id as string, { x: sn.x, y: sn.y, w: Math.round(wFrac * 1000) / 1000, h: Math.round(hFrac * 1000) / 1000, rotation: rot });
           }
           handlersRef.current.onCommitHistory?.(kind === "image" ? "Move image layer" : "Move shape");
           fRef.current?.requestRenderAll();
@@ -1155,9 +1247,28 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       } catch {
         /* تجاهل */
       }
+      const rawNX = Math.min(0.95, Math.max(-0.2, (t.left - box.x) / Math.max(1, box.w)));
+      const rawNY = Math.min(0.95, Math.max(-0.2, (t.top - box.y) / Math.max(1, box.h)));
+      const textOthers: FracBox[] = [
+        ...layersRef.current.filter((l) => l.visible !== false && l.id !== id).map((l) => ({ id: l.id, x: l.x, y: l.y, w: l.w, h: 0.12 })),
+        ...imageLayersRef.current.filter((l) => l.visible !== false).map((l) => ({ id: l.id, x: l.x, y: l.y, w: l.w, h: l.h })),
+        ...shapeLayersRef.current.filter((l) => l.visible !== false).map((l) => ({ id: l.id, x: l.x, y: l.y, w: l.w, h: l.h })),
+      ];
+      const snT = snapFractions(
+        { id, x: rawNX, y: rawNY, w: wFrac, h: 0.12 },
+        textOthers,
+        SNAP_PX / Math.max(1, box.w),
+        SNAP_PX / Math.max(1, box.h)
+      );
+      try {
+        t.set({ left: box.x + snT.x * box.w, top: box.y + snT.y * box.h });
+        t.setCoords();
+      } catch {
+        /* ignore */
+      }
       handlersRef.current.onUpdateText?.(id, {
-        x: Math.min(0.95, Math.max(-0.2, (t.left - box.x) / Math.max(1, box.w))),
-        y: Math.min(0.95, Math.max(-0.2, (t.top - box.y) / Math.max(1, box.h))),
+        x: snT.x,
+        y: snT.y,
         w: Math.round(wFrac * 1000) / 1000,
         rotation: rot,
       });
@@ -1450,6 +1561,23 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       <div ref={containerRef} style={{ position: "absolute", inset: 0, overflow: "hidden", touchAction: "none" }}>
         <canvas ref={elRef} style={{ display: "block" }} />
       </div>
+
+      {showGrid && boardBox.w > 10 && (
+        <div
+          style={{
+            position: "absolute",
+            left: boardBox.x,
+            top: boardBox.y,
+            width: boardBox.w,
+            height: boardBox.h,
+            pointerEvents: "none",
+            zIndex: 5,
+            backgroundImage: "linear-gradient(rgba(201,123,74,0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(201,123,74,0.13) 1px, transparent 1px)",
+            backgroundSize: `${Math.max(8, boardBox.w / 12)}px ${Math.max(8, boardBox.h / 12)}px`,
+          }}
+        />
+      )}
+      {showRulers && boardBox.w > 10 && <Rulers box={boardBox} />}
 
       {showEmptyBoard && textLayers.length === 0 && (
         <div

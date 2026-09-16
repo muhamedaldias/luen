@@ -4,6 +4,10 @@ interface BottomBarProps {
   height?: number;
   saveState?: "saved" | "saving" | "unsaved";
   activeTool?: string;
+  showGrid?: boolean;
+  showRulers?: boolean;
+  onToggleGrid?: () => void;
+  onToggleRulers?: () => void;
 }
 
 export default function BottomBar({
@@ -12,6 +16,10 @@ export default function BottomBar({
   height = 1080,
   saveState = "saved",
   activeTool = "Select",
+  showGrid = false,
+  showRulers = true,
+  onToggleGrid,
+  onToggleRulers,
 }: BottomBarProps) {
   return (
     <div
@@ -27,6 +35,9 @@ export default function BottomBar({
       <Divider />
       <StatusItem label="Tool" value={activeTool} />
       <div className="flex-1" />
+      <ViewToggle label="Grid" active={showGrid} title="Toggle grid (G)" onClick={onToggleGrid} />
+      <ViewToggle label="Rulers" active={showRulers} title="Toggle rulers (R)" onClick={onToggleRulers} />
+      <Divider />
       <StatusItem
         label=""
         value={
@@ -81,4 +92,25 @@ function StatusItem({
 
 function Divider() {
   return <div className="w-px h-3" style={{ background: "var(--border)" }} />;
+}
+
+function ViewToggle({ label, active, title, onClick }: { label: string; active: boolean; title: string; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="rounded"
+      style={{
+        fontSize: 11,
+        padding: "2px 8px",
+        cursor: "pointer",
+        border: "none",
+        background: active ? "var(--accent)" : "transparent",
+        color: active ? "var(--accent-foreground)" : "var(--muted-foreground)",
+        fontWeight: active ? 600 : 400,
+      }}
+    >
+      {label}
+    </button>
+  );
 }
