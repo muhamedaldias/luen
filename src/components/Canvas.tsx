@@ -1,5 +1,5 @@
 ﻿import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Upload, Plus, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { Upload, Plus, ZoomIn, ZoomOut, Maximize2, Type, Square, ImagePlus, Palette, FilePlus2 } from "lucide-react";
 import { Canvas as FabricCanvas, Textbox, Rect, Ellipse, Line, Image as FabricImage, PencilBrush, util, type FabricObject } from "fabric";
 import { ACCENT, boxRectProps, layerToStage, normAngle, textboxProps, type StageBox } from "../lib/fabricText";
 import type { TextLayer } from "../lib/textLayers";
@@ -39,6 +39,9 @@ interface CanvasProps {
   onShapeDraw?: (shape: "rect" | "ellipse", geom: { x: number; y: number; w: number; h: number }) => void;
   showGrid?: boolean;
   showRulers?: boolean;
+  blankMode?: boolean;
+  docLabel?: string;
+  onBlankAction?: (a: "text" | "shape" | "image" | "background" | "new") => void;
 }
 
 export interface FabricStageHandle {
@@ -135,6 +138,89 @@ function Rulers({ box }: { box: { x: number; y: number; w: number; h: number } }
   );
 }
 
+function StarterOverlay({ docLabel, onAction }: {
+  docLabel: string;
+  onAction: (a: "text" | "shape" | "image" | "background" | "new") => void;
+}) {
+  const btn: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    width: "100%",
+    padding: "9px 12px",
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: "pointer",
+    background: "var(--secondary)",
+    color: "var(--foreground)",
+    border: "1px solid var(--border)",
+  };
+  const kbd: React.CSSProperties = {
+    marginLeft: "auto",
+    fontSize: 10,
+    fontFamily: "monospace",
+    color: "var(--muted-foreground)",
+    background: "var(--card)",
+    border: "1px solid var(--border)",
+    borderRadius: 4,
+    padding: "1px 6px",
+  };
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 10,
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          padding: 20,
+          borderRadius: 10,
+          background: "var(--card)",
+          border: "1px solid var(--border)",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+          width: 280,
+          pointerEvents: "auto",
+        }}
+      >
+        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", margin: 0 }}>
+          Blank canvas{docLabel ? ` · ${docLabel}` : ""}
+        </p>
+        <p style={{ fontSize: 11, color: "var(--muted-foreground)", margin: "0 0 6px", lineHeight: 1.6 }}>
+          ابدأ التصميم بإضافة أول عنصر — أو اسحب صورة من جهازك.
+        </p>
+        <button style={btn} onClick={() => onAction("text")}>
+          <Type size={14} strokeWidth={2} style={{ color: "var(--accent)" }} /> Add text <span style={kbd}>T</span>
+        </button>
+        <button style={btn} onClick={() => onAction("shape")}>
+          <Square size={14} strokeWidth={2} style={{ color: "var(--accent)" }} /> Draw shape <span style={kbd}>U</span>
+        </button>
+        <button style={btn} onClick={() => onAction("image")}>
+          <ImagePlus size={14} strokeWidth={2} style={{ color: "#7FB8FF" }} /> Add image
+        </button>
+        <button style={btn} onClick={() => onAction("background")}>
+          <Palette size={14} strokeWidth={2} style={{ color: "var(--muted-foreground)" }} /> Background fill
+        </button>
+        <button
+          onClick={() => onAction("new")}
+          style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted-foreground)", fontSize: 11, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+        >
+          <FilePlus2 size={12} /> Different size…
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props, ref) {
   const {
     hasImage = false,
@@ -167,6 +253,9 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     onShapeDraw,
     showGrid = false,
     showRulers = true,
+    blankMode = false,
+    docLabel = "",
+    onBlankAction,
   } = props;
 
   const [draggingOver, setDraggingOver] = useState(false);
@@ -209,8 +298,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   toolRef.current = activeTool;
   zoomRef.current = zoom;
 
-  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw });
-  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw };
+  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction });
+  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction };
   const shapeKindRef = useRef(shapeKind);
   shapeKindRef.current = shapeKind;
   const layersRef = useRef(textLayers);
@@ -1545,7 +1634,12 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
 
   const status = busy || error || toast || imgError;
   const cursor = TOOL_CURSORS[activeTool] ?? "default";
-  const showEmptyBoard = !hasImage;
+  const isDocEmpty =
+    !hasImage &&
+    textLayers.length === 0 &&
+    imageLayers.length === 0 &&
+    shapeLayers.length === 0 &&
+    solidLayers.length === 0;
 
   return (
     <div
@@ -1556,7 +1650,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       onDrop={handleDrop}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {!hasImage && textLayers.length === 0 && <GridTexture />}
+      {isDocEmpty && <GridTexture />}
 
       <div ref={containerRef} style={{ position: "absolute", inset: 0, overflow: "hidden", touchAction: "none" }}>
         <canvas ref={elRef} style={{ display: "block" }} />
@@ -1579,7 +1673,14 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       )}
       {showRulers && boardBox.w > 10 && <Rulers box={boardBox} />}
 
-      {showEmptyBoard && textLayers.length === 0 && (
+      {isDocEmpty && blankMode && (
+        <StarterOverlay
+          docLabel={docLabel}
+          onAction={(a) => handlersRef.current.onBlankAction?.(a)}
+        />
+      )}
+
+      {isDocEmpty && !blankMode && (
         <div
           style={{
             position: "absolute",
@@ -1625,22 +1726,38 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
                 PNG, JPG, WEBP, GIF, SVG — up to 15 MB · or press T and click to add text
               </p>
             </div>
-            <label
-              style={{
-                padding: "6px 12px",
-                borderRadius: 4,
-                fontSize: 11,
-                fontWeight: 500,
-                cursor: "pointer",
-                background: "var(--secondary)",
-                color: "var(--foreground)",
-                border: "1px solid var(--border)",
-                pointerEvents: "auto",
-              }}
-            >
-              Browse files
-              <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileInput} />
-            </label>
+            <div style={{ display: "flex", gap: 8, pointerEvents: "auto" }}>
+              <label
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 4,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  background: "var(--secondary)",
+                  color: "var(--foreground)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                Browse files
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileInput} />
+              </label>
+              <button
+                onClick={() => handlersRef.current.onBlankAction?.("new")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 4,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  background: "transparent",
+                  color: "var(--muted-foreground)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                or start blank canvas…
+              </button>
+            </div>
           </div>
         </div>
       )}

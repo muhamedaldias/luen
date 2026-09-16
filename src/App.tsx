@@ -131,6 +131,7 @@ export default function App() {
   const [newLayerOpen, setNewLayerOpen] = useState(false);
   const [newCanvasOpen, setNewCanvasOpen] = useState(false);
   const [docSize, setDocSize] = useState({ w: 1200, h: 800 });
+  const [blankMode, setBlankMode] = useState(false);
   const [blendOpen, setBlendOpen] = useState(false);
   const [shapeKind, setShapeKind] = useState<"rect" | "ellipse">("rect");
   const [showGrid, setShowGrid] = useState(false);
@@ -755,6 +756,7 @@ export default function App() {
         height: uploaded?.height ?? natural.height,
       };
       setCanvasImage(newImage);
+      setBlankMode(false);
       pushHistory(`Open ${file.name}${uploaded ? "" : " (local)"}`, { image: newImage });
     } else if (uploaded) {
       const newImage = {
@@ -764,6 +766,7 @@ export default function App() {
         height: uploaded.height,
       };
       setCanvasImage(newImage);
+      setBlankMode(false);
       pushHistory(`Open ${file.name}`, { image: newImage });
     } else {
       setLoadError("Could not load this image at all");
@@ -1362,6 +1365,7 @@ export default function App() {
         try {
           const p = await readProjectFile(file);
           setCanvasImage(p.image ? { ...p.image } : null);
+          setBlankMode(!p.image);
           setTextLayers(cloneLayers(p.textLayers));
           setImageLayers(cloneLayers(p.imageLayers));
           setShapeLayers(cloneLayers(p.shapeLayers));
@@ -1411,6 +1415,7 @@ export default function App() {
 
   function handleNew() {
     setCanvasImage(null);
+    setBlankMode(true);
     setTextLayers([]);
     setImageLayers([]);
     setShapeLayers([]);
@@ -1426,8 +1431,23 @@ export default function App() {
     pushHistory("New canvas", { image: null, layers: [], imageLayers: [], shapeLayers: [], solidLayers: [], order: [], groups: {} });
   }
 
+  function handleBlankAction(a: "text" | "shape" | "image" | "background" | "new") {
+    if (a === "text") {
+      handleAddText(0.32, 0.4);
+    } else if (a === "shape") {
+      setActiveTool("shape");
+    } else if (a === "image") {
+      handleOpen();
+    } else if (a === "background") {
+      setNewLayerOpen(true);
+    } else {
+      setNewCanvasOpen(true);
+    }
+  }
+
   function handleNewCanvasConfirm(opts: NewCanvasOpts) {
     setNewCanvasOpen(false);
+    setBlankMode(true);
     setCanvasImage(null);
     setTextLayers([]);
     setImageLayers([]);
@@ -1568,6 +1588,9 @@ export default function App() {
               onShapeDraw={handleShapeDraw}
               showGrid={showGrid}
               showRulers={showRulers}
+              blankMode={blankMode}
+              docLabel={`${docSize.w}×${docSize.h}`}
+              onBlankAction={handleBlankAction}
               imageLayers={imageLayers}
               shapeLayers={shapeLayers}
               solidLayers={solidLayers}
