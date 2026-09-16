@@ -1,0 +1,142 @@
+export interface Theme {
+  id: string;
+  name: string;
+  description: string;
+  swatch: [string, string, string]; // bg, accent, text
+  vars: Record<string, string>;
+}
+
+export const themes: Theme[] = [
+  {
+    id: "ember",
+    name: "Ember",
+    description: "Warm studio dark",
+    swatch: ["#141312", "#C97B4A", "#EDEBE7"],
+    vars: {
+      "--background": "#141312",
+      "--foreground": "#EDEBE7",
+      "--card": "#1C1B1A",
+      "--card-foreground": "#EDEBE7",
+      "--primary": "#C97B4A",
+      "--primary-foreground": "#141312",
+      "--secondary": "#242220",
+      "--secondary-foreground": "#EDEBE7",
+      "--muted": "#1C1B1A",
+      "--muted-foreground": "#9C9891",
+      "--accent": "#C97B4A",
+      "--accent-foreground": "#141312",
+      "--border": "#2A2927",
+      "--ring": "#C97B4A",
+      "--success": "#6FA87A",
+      "--warning": "#D6A24A",
+      "--danger": "#C6604F",
+    },
+  },
+  {
+    id: "arctic",
+    name: "Arctic",
+    description: "Cool steel blue",
+    swatch: ["#111318", "#5B90D4", "#E8ECF2"],
+    vars: {
+      "--background": "#111318",
+      "--foreground": "#E8ECF2",
+      "--card": "#181D26",
+      "--card-foreground": "#E8ECF2",
+      "--primary": "#5B90D4",
+      "--primary-foreground": "#111318",
+      "--secondary": "#1F2534",
+      "--secondary-foreground": "#E8ECF2",
+      "--muted": "#181D26",
+      "--muted-foreground": "#7A8CA0",
+      "--accent": "#5B90D4",
+      "--accent-foreground": "#111318",
+      "--border": "#252E40",
+      "--ring": "#5B90D4",
+      "--success": "#50A870",
+      "--warning": "#C89630",
+      "--danger": "#B85050",
+    },
+  },
+  {
+    id: "sage",
+    name: "Sage",
+    description: "Forest teal dark",
+    swatch: ["#101513", "#5FA88E", "#E5EDEA"],
+    vars: {
+      "--background": "#101513",
+      "--foreground": "#E5EDEA",
+      "--card": "#171E1C",
+      "--card-foreground": "#E5EDEA",
+      "--primary": "#5FA88E",
+      "--primary-foreground": "#101513",
+      "--secondary": "#1E2A26",
+      "--secondary-foreground": "#E5EDEA",
+      "--muted": "#171E1C",
+      "--muted-foreground": "#7A9488",
+      "--accent": "#5FA88E",
+      "--accent-foreground": "#101513",
+      "--border": "#25322C",
+      "--ring": "#5FA88E",
+      "--success": "#6FA87A",
+      "--warning": "#C8A030",
+      "--danger": "#B05050",
+    },
+  },
+  {
+    id: "obsidian",
+    name: "Obsidian",
+    description: "Deep dark, gold",
+    swatch: ["#0C0B0A", "#D4A853", "#F0EDE8"],
+    vars: {
+      "--background": "#0C0B0A",
+      "--foreground": "#F0EDE8",
+      "--card": "#141210",
+      "--card-foreground": "#F0EDE8",
+      "--primary": "#D4A853",
+      "--primary-foreground": "#0C0B0A",
+      "--secondary": "#1C1916",
+      "--secondary-foreground": "#F0EDE8",
+      "--muted": "#141210",
+      "--muted-foreground": "#8A8070",
+      "--accent": "#D4A853",
+      "--accent-foreground": "#0C0B0A",
+      "--border": "#222018",
+      "--ring": "#D4A853",
+      "--success": "#6A9E74",
+      "--warning": "#D4A853",
+      "--danger": "#C0604F",
+    },
+  },
+  {
+    id: "pearl",
+    name: "Pearl",
+    description: "Light studio",
+    swatch: ["#F5F3F0", "#C97B4A", "#1A1816"],
+    vars: {
+      "--background": "#F5F3F0",
+      "--foreground": "#1A1816",
+      "--card": "#EDEAE5",
+      "--card-foreground": "#1A1816",
+      "--primary": "#C97B4A",
+      "--primary-foreground": "#FFFFFF",
+      "--secondary": "#E4E0DA",
+      "--secondary-foreground": "#1A1816",
+      "--muted": "#EDEAE5",
+      "--muted-foreground": "#6B6460",
+      "--accent": "#C97B4A",
+      "--accent-foreground": "#FFFFFF",
+      "--border": "#D4D0CA",
+      "--ring": "#C97B4A",
+      "--success": "#3A8A50",
+      "--warning": "#B8820A",
+      "--danger": "#B03020",
+    },
+  },
+];
+
+export function applyTheme(theme: Theme) {
+  const root = document.documentElement;
+  for (const [key, value] of Object.entries(theme.vars)) {
+    root.style.setProperty(key, value);
+  }
+}

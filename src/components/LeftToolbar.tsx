@@ -1,0 +1,155 @@
+import { useState } from "react";
+import {
+  MousePointer2,
+  Crop,
+  Brush,
+  Type,
+  Square,
+  Wand2,
+  Eraser,
+  Pipette,
+  Hand,
+  ZoomIn,
+} from "lucide-react";
+
+type ToolId =
+  | "select"
+  | "crop"
+  | "brush"
+  | "text"
+  | "shape"
+  | "smart-select"
+  | "eraser"
+  | "eyedropper"
+  | "pan"
+  | "zoom";
+
+interface Tool {
+  id: ToolId;
+  icon: React.ReactNode;
+  label: string;
+  shortcut?: string;
+}
+
+const tools: Tool[] = [
+  { id: "select", icon: <MousePointer2 size={16} strokeWidth={1.75} />, label: "Select", shortcut: "V" },
+  { id: "crop", icon: <Crop size={16} strokeWidth={1.75} />, label: "Crop", shortcut: "C" },
+  { id: "brush", icon: <Brush size={16} strokeWidth={1.75} />, label: "Brush", shortcut: "B" },
+  { id: "eraser", icon: <Eraser size={16} strokeWidth={1.75} />, label: "Eraser", shortcut: "E" },
+  { id: "text", icon: <Type size={16} strokeWidth={1.75} />, label: "Text", shortcut: "T" },
+  { id: "shape", icon: <Square size={16} strokeWidth={1.75} />, label: "Shape", shortcut: "U" },
+  { id: "smart-select", icon: <Wand2 size={16} strokeWidth={1.75} />, label: "Smart Select", shortcut: "W" },
+  { id: "eyedropper", icon: <Pipette size={16} strokeWidth={1.75} />, label: "Eyedropper", shortcut: "I" },
+];
+
+const navTools: Tool[] = [
+  { id: "pan", icon: <Hand size={16} strokeWidth={1.75} />, label: "Pan", shortcut: "H" },
+  { id: "zoom", icon: <ZoomIn size={16} strokeWidth={1.75} />, label: "Zoom", shortcut: "Z" },
+];
+
+interface LeftToolbarProps {
+  activeTool?: ToolId;
+  onToolChange?: (tool: ToolId) => void;
+}
+
+export default function LeftToolbar({ activeTool = "select", onToolChange }: LeftToolbarProps) {
+  return (
+    <div
+      className="flex flex-col items-center py-2 gap-0.5 h-full"
+      style={{
+        width: 56,
+        background: "var(--card)",
+        borderRight: "1px solid var(--border)",
+      }}
+    >
+      {tools.map((tool) => (
+        <ToolButton
+          key={tool.id}
+          tool={tool}
+          active={activeTool === tool.id}
+          onClick={() => onToolChange?.(tool.id)}
+        />
+      ))}
+
+      {/* Divider */}
+      <div className="w-7 my-1" style={{ borderTop: "1px solid var(--border)" }} />
+
+      {navTools.map((tool) => (
+        <ToolButton
+          key={tool.id}
+          tool={tool}
+          active={activeTool === tool.id}
+          onClick={() => onToolChange?.(tool.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ToolButton({
+  tool,
+  active,
+  onClick,
+}: {
+  tool: Tool;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  function handleClick() {
+    console.log(`[toolbar] click tool=${tool.id}`);
+    onClick();
+  }
+
+  return (
+    <div className="relative flex items-center">
+      <button
+        onClick={handleClick}
+        className="flex items-center justify-center rounded transition-all duration-100"
+        style={{
+          width: 36,
+          height: 36,
+          color: active ? "var(--accent-foreground)" : hovered ? "var(--foreground)" : "var(--muted-foreground)",
+          background: active
+            ? "var(--accent)"
+            : hovered
+              ? "var(--secondary)"
+              : "transparent",
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        title={tool.label}
+      >
+        {tool.icon}
+      </button>
+
+      {hovered && (
+        <div
+          className="absolute left-full ml-2.5 px-2 py-1 text-xs whitespace-nowrap z-50 pointer-events-none flex items-center gap-2"
+          style={{
+            background: "#232220",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            color: "var(--foreground)",
+            transition: "opacity 100ms ease",
+          }}
+        >
+          {tool.label}
+          {tool.shortcut && (
+            <span
+              className="text-xs px-1 rounded"
+              style={{
+                color: "var(--muted-foreground)",
+                background: "var(--secondary)",
+                fontFamily: "monospace",
+              }}
+            >
+              {tool.shortcut}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
