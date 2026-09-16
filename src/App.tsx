@@ -26,12 +26,18 @@ import {
   alignPatches,
   distributePatches,
   createGroupId,
-  cloneEfficient,
   toggleSelection,
   normBlend,
   type LayerRef,
   type AlignMode,
 } from "./lib/layerSystem";
+import {
+  cloneLayers,
+  emptyEntry,
+  getMaxHistory,
+  type CanvasImage,
+  type HistoryEntry,
+} from "./lib/history";
 
 type ToolId =
   | "select"
@@ -57,13 +63,6 @@ const toolLabels: Record<ToolId, string> = {
   pan: "Pan",
   zoom: "Zoom",
 };
-
-interface CanvasImage {
-  url: string;
-  imageId: string | null;
-  width: number;
-  height: number;
-}
 
 async function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -130,23 +129,7 @@ export default function App() {
   const [newLayerOpen, setNewLayerOpen] = useState(false);
   const [blendOpen, setBlendOpen] = useState(false);
 
-  // ── Undo/Redo: لقطات فعالة للذاكرة (مشاركة بنيوية للروابط + سقف + تنظيف تلقائي) ──
-  interface HistoryEntry {
-    label: string;
-    image: CanvasImage | null;
-    layers: TextLayer[];
-    imageLayers: ImageLayer[];
-    shapeLayers: ShapeLayer[];
-    solidLayers: SolidLayer[];
-    strokes: object[];
-    order: LayerRef[];
-    groups: Record<string, string>;
-  }
-  const MAX_HISTORY = 25;
-  function cloneLayers<T>(ls: T[]): T[] {
-    return cloneEfficient(ls);
-  }
-  const emptyEntry = (label: string): HistoryEntry => ({ label, image: null, layers: [], imageLayers: [], shapeLayers: [], solidLayers: [], strokes: [], order: [], groups: {} });
+  // ── Undo/Redo: لقطات Memento بحد تكيّفي حسب حجم الصورة (انظر lib/history.ts) ──
   const [history, setHistory] = useState<HistoryEntry[]>([emptyEntry("Open")]);
   const [historyIdx, setHistoryIdx] = useState(0);
   const historyRef = useRef<HistoryEntry[]>([emptyEntry("Open")]);
@@ -309,8 +292,9 @@ export default function App() {
       const idx = historyIdxRef.current;
       let entries = [...h.slice(0, idx + 1), snapshot];
       let nextIdx = idx + 1;
-      if (entries.length > MAX_HISTORY) {
-        const drop = entries.length - MAX_HISTORY;
+      const maxHist = getMaxHistory(imgNext);
+      if (entries.length > maxHist) {
+        const drop = entries.length - maxHist;
         entries = entries.slice(drop);
         nextIdx -= drop;
       }
