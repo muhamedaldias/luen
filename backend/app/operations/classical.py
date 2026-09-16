@@ -152,8 +152,18 @@ def adjust(image_id: str, user_id: str, params: dict) -> str:
     brightness = _float_params(params, "brightness", 0)
     contrast = _float_params(params, "contrast", 0)
     saturation = _float_params(params, "saturation", 0)
+    highlights = _float_params(params, "highlights", 0)
+    shadows = _float_params(params, "shadows", 0)
+    temperature = _float_params(params, "temperature", 0)
+    blur_v = _float_params(params, "blur", 0)
 
-    rgb = np.array(img.convert("RGB"), dtype=np.float32)
+    base = img.convert("RGB")
+    if blur_v:
+        from PIL import ImageFilter
+
+        base = base.filter(ImageFilter.GaussianBlur(radius=min(20.0, max(0.0, blur_v / 5.0))))
+
+    rgb = np.array(base, dtype=np.float32)
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
     l_channel = lab[:, :, 0]
 
@@ -162,9 +172,23 @@ def adjust(image_id: str, user_id: str, params: dict) -> str:
     if contrast:
         scale = 1 + contrast / 100.0
         l_channel = np.clip((l_channel - 128) * scale + 128, 0, 255)
+    if highlights or shadows:
+        lum = l_channel / 255.0
+        if shadows:
+            dark = np.clip((0.5 - lum) * 2.0, 0, 1) ** 1.5
+            l_channel = np.clip(l_channel + shadows * 0.6 * dark, 0, 255)
+        if highlights:
+            bright = np.clip((lum - 0.5) * 2.0, 0, 1) ** 1.5
+            l_channel = np.clip(l_channel + highlights * 0.6 * bright, 0, 255)
     lab[:, :, 0] = l_channel
     rgb_out = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
     result = Image.fromarray(np.clip(rgb_out, 0, 255).astype(np.uint8))
+
+    if temperature:
+        arr = np.array(result, dtype=np.float32)
+        arr[:, :, 0] = np.clip(arr[:, :, 0] + temperature * 0.9, 0, 255)
+        arr[:, :, 2] = np.clip(arr[:, :, 2] - temperature * 0.9, 0, 255)
+        result = Image.fromarray(arr.astype(np.uint8))
 
     if saturation:
         result = ImageEnhance.Color(result).enhance(1 + saturation / 100.0)

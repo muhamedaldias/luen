@@ -1,4 +1,4 @@
-from . import background, blend, classical, enhance, filters
+from . import artistic, background, blend, classical, enhance, filters
 
 OPERATIONS = {
     "crop": classical.crop,
@@ -22,6 +22,17 @@ OPERATIONS = {
     "resize_canvas": classical.resize_canvas,
     "remove_background": background.remove_background,
     "remove_object": filters.inpaint,
+    "invert": artistic.invert,
+    "posterize": artistic.posterize,
+    "solarize": artistic.solarize,
+    "threshold": artistic.threshold,
+    "motion_blur": artistic.motion_blur,
+    "radial_blur": artistic.radial_blur,
+    "pixelate": artistic.pixelate,
+    "denoise": artistic.denoise,
+    "grain": artistic.grain,
+    "glitch": artistic.glitch,
+    "style": artistic.style,
 }
 
 COMPARISON_OPERATIONS = {

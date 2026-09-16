@@ -37,7 +37,7 @@ def get_settings() -> Settings:
 
 
 def get_slow_operations() -> list[str]:
-    slow = ["auto_enhance", "pro_enhance", "blend", "remove_object", "upscale"]
+    slow = ["auto_enhance", "pro_enhance", "blend", "remove_object", "upscale", "denoise", "radial_blur"]
     try:
         import rembg  # noqa: F401
         slow.append("remove_background")

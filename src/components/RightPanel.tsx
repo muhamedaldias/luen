@@ -1419,6 +1419,140 @@ function AdjustmentsTab({
           ))}
         </div>
       </div>
+      <div className="w-full mb-1" style={{ minWidth: 0 }}>
+        <p className="text-xs font-semibold mb-1.5 tracking-wide" style={{ color: "var(--muted-foreground)", fontSize: 10, letterSpacing: "0.08em" }}>
+          STYLES
+        </p>
+        <div className="grid grid-cols-3 gap-1.5" style={{ minWidth: 0 }}>
+          {(
+            [
+              { label: "Cinematic", name: "cinematic", preview: "linear-gradient(135deg,#0f2a33 0%,#c97b4a 100%)" },
+              { label: "Warm", name: "warm", preview: "linear-gradient(135deg,#7a3b12 0%,#e8a87c 100%)" },
+              { label: "Cold", name: "cold", preview: "linear-gradient(135deg,#12395e 0%,#7fb8d4 100%)" },
+              { label: "Noir", name: "noir", preview: "linear-gradient(135deg,#000000 0%,#8a8a8a 100%)" },
+              { label: "Faded", name: "faded", preview: "linear-gradient(135deg,#8a7f72 0%,#d8cfc2 100%)" },
+              { label: "Vivid", name: "vivid", preview: "linear-gradient(135deg,#b83a2a 0%,#e8c832 100%)" },
+            ] as { label: string; name: string; preview: string }[]
+          ).map((f) => (
+            <button
+              key={f.label}
+              disabled={applying || bgBusy || !hasImage}
+              onClick={() => void quickFilter("style", { name: f.name })}
+              className="rounded text-xs font-medium truncate"
+              style={{
+                background: "var(--secondary)",
+                color: "var(--foreground)",
+                border: "1px solid var(--border)",
+                cursor: applying || bgBusy || !hasImage ? "not-allowed" : "pointer",
+                opacity: applying || bgBusy || !hasImage ? 0.5 : 1,
+                minWidth: 0,
+                padding: 4,
+              }}
+            >
+              <span className="block rounded" style={{ background: f.preview, height: 26, marginBottom: 4, border: "1px solid var(--border)" }} />
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="w-full mb-1" style={{ minWidth: 0 }}>
+        <p className="text-xs font-semibold mb-1.5 tracking-wide" style={{ color: "var(--muted-foreground)", fontSize: 10, letterSpacing: "0.08em" }}>
+          TONES
+        </p>
+        <div className="grid grid-cols-4 gap-1.5" style={{ minWidth: 0 }}>
+          {(
+            [
+              { label: "Invert", op: "invert", params: {} },
+              { label: "Poster", op: "posterize", params: { bits: 3 } },
+              { label: "Solar", op: "solarize", params: { threshold: 128 } },
+              { label: "Thresh", op: "threshold", params: { level: 128 } },
+            ] as { label: string; op: string; params: Record<string, number | string> }[]
+          ).map((f) => (
+            <button
+              key={f.label}
+              disabled={applying || bgBusy || !hasImage}
+              onClick={() => void quickFilter(f.op, f.params)}
+              className="h-8 rounded text-xs font-medium truncate"
+              style={{
+                background: "var(--secondary)",
+                color: "var(--foreground)",
+                border: "1px solid var(--border)",
+                cursor: applying || bgBusy || !hasImage ? "not-allowed" : "pointer",
+                opacity: applying || bgBusy || !hasImage ? 0.5 : 1,
+                minWidth: 0,
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="w-full mb-1" style={{ minWidth: 0 }}>
+        <p className="text-xs font-semibold mb-1.5 tracking-wide" style={{ color: "var(--muted-foreground)", fontSize: 10, letterSpacing: "0.08em" }}>
+          ARTISTIC
+        </p>
+        <div className="grid grid-cols-4 gap-1.5" style={{ minWidth: 0 }}>
+          {(
+            [
+              { label: "Emboss", preset: "emboss" },
+              { label: "Contour", preset: "contour" },
+              { label: "Edges", preset: "edge_enhance" },
+              { label: "Smooth", preset: "smooth" },
+            ] as { label: string; preset: string }[]
+          ).map((f) => (
+            <button
+              key={f.label}
+              disabled={applying || bgBusy || !hasImage}
+              onClick={() => void quickFilter("filter", { preset: f.preset })}
+              className="h-8 rounded text-xs font-medium truncate"
+              style={{
+                background: "var(--secondary)",
+                color: "var(--foreground)",
+                border: "1px solid var(--border)",
+                cursor: applying || bgBusy || !hasImage ? "not-allowed" : "pointer",
+                opacity: applying || bgBusy || !hasImage ? 0.5 : 1,
+                minWidth: 0,
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="w-full mb-1" style={{ minWidth: 0 }}>
+        <p className="text-xs font-semibold mb-1.5 tracking-wide" style={{ color: "var(--muted-foreground)", fontSize: 10, letterSpacing: "0.08em" }}>
+          EFFECTS
+        </p>
+        <div className="grid grid-cols-3 gap-1.5" style={{ minWidth: 0 }}>
+          {(
+            [
+              { label: "Motion", op: "motion_blur", params: { size: 15, angle: 0 } },
+              { label: "Radial", op: "radial_blur", params: { strength: 40 } },
+              { label: "Pixelate", op: "pixelate", params: { size: 12 } },
+              { label: "Grain", op: "grain", params: { amount: 25 } },
+              { label: "Glitch", op: "glitch", params: { shift: 18, slices: 5 } },
+              { label: "Denoise", op: "denoise", params: { strength: 7 } },
+            ] as { label: string; op: string; params: Record<string, number | string> }[]
+          ).map((f) => (
+            <button
+              key={f.label}
+              disabled={applying || bgBusy || !hasImage}
+              onClick={() => void quickFilter(f.op, f.params)}
+              className="h-8 rounded text-xs font-medium truncate"
+              style={{
+                background: "var(--secondary)",
+                color: "var(--foreground)",
+                border: "1px solid var(--border)",
+                cursor: applying || bgBusy || !hasImage ? "not-allowed" : "pointer",
+                opacity: applying || bgBusy || !hasImage ? 0.5 : 1,
+                minWidth: 0,
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
       {adjustments.map((adj) => (
         <div key={adj.key} className="py-2 w-full" style={{ borderBottom: "1px solid var(--border)", minWidth: 0 }}>
           <div className="flex items-center justify-between mb-1.5" style={{ minWidth: 0 }}>

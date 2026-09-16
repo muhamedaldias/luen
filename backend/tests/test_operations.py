@@ -18,6 +18,8 @@ def test_registry_has_core_operations(client):
         "auto_enhance", "remove_background", "blur", "sharpen",
         "brightness_contrast", "hue_saturation", "grayscale", "sepia",
         "vignette", "upscale", "remove_object",
+        "invert", "posterize", "solarize", "threshold", "motion_blur",
+        "pixelate", "grain", "glitch", "style", "filter",
     ):
         assert name in OPERATIONS
 
@@ -52,6 +54,47 @@ def test_adjust_operation(client):
     )
     assert res.status_code == 200, res.text
     assert res.json()["status"] == "done"
+
+
+def test_adjust_all_sliders(client):
+    image = _upload(client)
+    res = client.post(
+        "/api/operations/adjust",
+        json={"image_id": image["image_id"], "params": {
+            "brightness": 10, "contrast": 10, "saturation": 10, "sharpness": 10,
+            "blur": 5, "highlights": 20, "shadows": 20, "temperature": 15,
+        }},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "done"
+
+
+def test_artistic_operations_all_run(client):
+    image = _upload(client)
+    iid = image["image_id"]
+    _run(client, iid, "invert", {})
+    _run(client, iid, "posterize", {"bits": 3})
+    _run(client, iid, "solarize", {"threshold": 128})
+    _run(client, iid, "threshold", {"level": 128})
+    _run(client, iid, "motion_blur", {"size": 9, "angle": 30})
+    _run(client, iid, "pixelate", {"size": 8})
+    _run(client, iid, "grain", {"amount": 20})
+    _run(client, iid, "glitch", {"shift": 8, "slices": 3})
+    _run(client, iid, "filter", {"preset": "emboss"})
+    _run(client, iid, "filter", {"preset": "contour"})
+    _run(client, iid, "filter", {"preset": "edge_enhance"})
+    _run(client, iid, "filter", {"preset": "smooth"})
+    for name in ("cinematic", "warm", "cold", "noir", "faded", "vivid"):
+        _run(client, iid, "style", {"name": name})
+
+
+def test_style_rejects_unknown(client):
+    image = _upload(client)
+    res = client.post(
+        "/api/operations/style",
+        json={"image_id": image["image_id"], "params": {"name": "nope"}},
+    )
+    assert res.status_code == 400
 
 
 def test_unknown_operation(client):

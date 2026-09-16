@@ -587,6 +587,168 @@ function num(v: unknown, def: number): number {
   return Number.isFinite(n) ? n : def;
 }
 
+const clamp255 = (v: number): number => Math.max(0, Math.min(255, Math.round(v)));
+
+function pixelLoop(
+  src: HTMLCanvasElement,
+  fn: (r: number, g: number, b: number, x: number, y: number) => [number, number, number]
+): HTMLCanvasElement {
+  const [c, ctx] = canvasOf(src.width, src.height);
+  ctx.drawImage(src, 0, 0);
+  const img = ctx.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      const i = (y * c.width + x) * 4;
+      const [r, g, b] = fn(d[i], d[i + 1], d[i + 2], x, y);
+      d[i] = r;
+      d[i + 1] = g;
+      d[i + 2] = b;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+function blurCanvas(src: HTMLCanvasElement, px: number): HTMLCanvasElement {
+  if (px <= 0) return src;
+  const [c, ctx] = canvasOf(src.width, src.height);
+  ctx.filter = `blur(${px.toFixed(2)}px)`;
+  ctx.drawImage(src, 0, 0);
+  ctx.filter = "none";
+  return c;
+}
+
+function motionBlur(src: HTMLCanvasElement, size: number, angleDeg: number): HTMLCanvasElement {
+  const R = Math.max(1, Math.min(25, size / 2));
+  const rad = ((angleDeg % 180) * Math.PI) / 180;
+  const dx = Math.cos(rad);
+  const dy = Math.sin(rad);
+  const [c, ctx] = canvasOf(src.width, src.height);
+  ctx.globalAlpha = 1 / 7;
+  for (let k = -3; k <= 3; k++) {
+    ctx.drawImage(src, (dx * R * k) / 3, (dy * R * k) / 3);
+  }
+  ctx.globalAlpha = 1;
+  return c;
+}
+
+function radialBlur(src: HTMLCanvasElement, strength: number): HTMLCanvasElement {
+  const s = Math.max(0, Math.min(100, strength));
+  if (s <= 0) return src;
+  const samples = 6;
+  const [c, ctx] = canvasOf(src.width, src.height);
+  ctx.globalAlpha = 1 / samples;
+  for (let i = 0; i < samples; i++) {
+    const z = 1 + ((s / 100) * 0.25 * i) / (samples - 1);
+    const w2 = src.width * z;
+    const h2 = src.height * z;
+    ctx.drawImage(src, (src.width - w2) / 2, (src.height - h2) / 2, w2, h2);
+  }
+  ctx.globalAlpha = 1;
+  return c;
+}
+
+function pixelateLocal(src: HTMLCanvasElement, size: number): HTMLCanvasElement {
+  const s = Math.max(2, Math.min(64, Math.round(size)));
+  const tw = Math.max(1, Math.floor(src.width / s));
+  const th = Math.max(1, Math.floor(src.height / s));
+  const tiny = document.createElement("canvas");
+  tiny.width = tw;
+  tiny.height = th;
+  const tctx = tiny.getContext("2d");
+  if (!tctx) return src;
+  tctx.imageSmoothingEnabled = true;
+  tctx.drawImage(src, 0, 0, tw, th);
+  const [c, ctx] = canvasOf(src.width, src.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(tiny, 0, 0, src.width, src.height);
+  return c;
+}
+
+function grainLocal(src: HTMLCanvasElement, amount: number): HTMLCanvasElement {
+  const a = Math.max(0, Math.min(100, amount));
+  if (a <= 0) return src;
+  const sigma = a * 0.9;
+  return pixelLoop(src, (r, g, b) => {
+    const n = (Math.random() + Math.random() + Math.random() - 1.5) * sigma;
+    return [clamp255(r + n), clamp255(g + n), clamp255(b + n)];
+  });
+}
+
+function lcg(seed: number): () => number {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function glitchLocal(src: HTMLCanvasElement, shift: number, slices: number, seed: number): HTMLCanvasElement {
+  const sh = Math.max(0, Math.min(60, Math.round(shift)));
+  const [c, ctx] = canvasOf(src.width, src.height);
+  ctx.drawImage(src, 0, 0);
+  const base = c.getContext("2d", { willReadFrequently: true });
+  if (!base) return src;
+  const data = base.getImageData(0, 0, src.width, src.height);
+  const d = data.data;
+  const W = src.width;
+  const H = src.height;
+  const rnd = lcg(Math.round(seed));
+  const out = base.createImageData(W, H);
+  const o = out.data;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const xr = Math.min(W - 1, Math.max(0, x + sh));
+      const xb = Math.min(W - 1, Math.max(0, x - sh));
+      o[i] = d[(y * W + xr) * 4];
+      o[i + 1] = d[i + 1];
+      o[i + 2] = d[(y * W + xb) * 4 + 2];
+      o[i + 3] = d[i + 3];
+    }
+  }
+  base.putImageData(out, 0, 0);
+  const [snapC, snapCtx] = canvasOf(W, H);
+  snapCtx.drawImage(c, 0, 0);
+  const bands = Math.max(2, Math.min(12, Math.round(slices)));
+  const edges: number[] = [0];
+  for (let k = 0; k < bands; k++) edges.push(Math.floor(rnd() * H));
+  edges.push(H);
+  edges.sort((p, q) => p - q);
+  for (let k = 0; k < edges.length - 1; k++) {
+    const y0 = edges[k];
+    const y1 = edges[k + 1];
+    if (y1 <= y0) continue;
+    const off = Math.floor(rnd() * (sh * 4 + 1)) - sh * 2;
+    if (off) base.drawImage(snapC, 0, y0, W, y1 - y0, off, y0, W, y1 - y0);
+  }
+  return c;
+}
+
+function styleLocal(src: HTMLCanvasElement, name: string): HTMLCanvasElement {
+  const n = name.toLowerCase();
+  if (n === "warm") return pixelLoop(src, (r, g, b) => [clamp255(r + 18), g, clamp255(b - 18)]);
+  if (n === "cold") return pixelLoop(src, (r, g, b) => [clamp255(r - 16), g, clamp255(b + 22)]);
+  if (n === "noir") {
+    return pixelLoop(src, (r, g, b) => {
+      const v = clamp255(((r + g + b) / 3 - 127.5) * 1.35 + 127.5);
+      return [v, v, v];
+    });
+  }
+  if (n === "faded") return pixelLoop(src, (r, g, b) => [clamp255(r * 0.85 + 40), clamp255(g * 0.85 + 30), clamp255(b * 0.85 + 30)]);
+  if (n === "vivid") return pixelLoop(src, (r, g, b) => [clamp255((r - 127.5) * 1.12 + 127.5), clamp255((g - 127.5) * 1.12 + 127.5), clamp255((b - 127.5) * 1.12 + 127.5)]);
+  if (n === "cinematic") {
+    return pixelLoop(src, (r, g, b) => {
+      const lum = (r + g + b) / 3 / 255;
+      const nr = clamp255(((r + (lum - 0.5) * 44 + 6 - 127.5) * 1.08 + 127.5));
+      const nb = clamp255(b - (lum - 0.5) * 30 + 8);
+      return [nr, g, nb];
+    });
+  }
+  throw new Error(`unknown style: ${name}`);
+}
+
 export interface LocalResult {
   url: string;
   width: number;
@@ -628,6 +790,27 @@ export async function applyLocalOp(
       const ct = Math.max(-100, Math.min(100, num(params.contrast, 0)));
       const s = Math.max(-100, Math.min(100, num(params.saturation, 0)));
       let tmp = drawFiltered(img, `brightness(${(1 + b / 100).toFixed(3)}) contrast(${(1 + ct / 100).toFixed(3)}) saturate(${(1 + s / 100).toFixed(3)})`);
+      const bl = Math.max(0, Math.min(40, num(params.blur, 0)));
+      if (bl > 0) tmp = blurCanvas(tmp, bl / 5);
+      const tp = Math.max(-100, Math.min(100, num(params.temperature, 0)));
+      const hi = Math.max(-100, Math.min(100, num(params.highlights, 0)));
+      const shd = Math.max(-100, Math.min(100, num(params.shadows, 0)));
+      if (tp !== 0 || hi !== 0 || shd !== 0) {
+        tmp = pixelLoop(tmp, (r, g, bl2) => {
+          const lum = (r + g + bl2) / 3 / 255;
+          let l = lum * 255;
+          if (shd !== 0) {
+            const dark = Math.pow(Math.max(0, Math.min(1, (0.5 - lum) * 2)), 1.5);
+            l += shd * 0.6 * dark;
+          }
+          if (hi !== 0) {
+            const bright = Math.pow(Math.max(0, Math.min(1, (lum - 0.5) * 2)), 1.5);
+            l += hi * 0.6 * bright;
+          }
+          const k = l / Math.max(1, lum * 255);
+          return [clamp255(r * k + tp * 0.9), clamp255(g * k), clamp255(bl2 * k - tp * 0.9)];
+        });
+      }
       const sh = num(params.sharpness, 0);
       if (sh) tmp = sharpen(tmp, sh / 50);
       out = tmp;
@@ -677,6 +860,61 @@ export async function applyLocalOp(
       const mask = params.mask;
       if (typeof mask !== "string" || !mask) throw new Error("mask is required");
       out = await removeObject(base, mask);
+      break;
+    }
+    case "invert":
+      out = pixelLoop(base, (r, g, b) => [255 - r, 255 - g, 255 - b]);
+      break;
+    case "posterize": {
+      const bits = Math.max(1, Math.min(7, Math.round(num(params.bits, 3))));
+      const mask = (0xff << (8 - bits)) & 0xff;
+      out = pixelLoop(base, (r, g, b) => [r & mask, g & mask, b & mask]);
+      break;
+    }
+    case "solarize": {
+      const th = Math.max(0, Math.min(255, Math.round(num(params.threshold, 128))));
+      out = pixelLoop(base, (r, g, b) => [r > th ? 255 - r : r, g > th ? 255 - g : g, b > th ? 255 - b : b]);
+      break;
+    }
+    case "threshold": {
+      const lv = Math.max(0, Math.min(255, Math.round(num(params.level, 128))));
+      out = pixelLoop(base, (r, g, b) => {
+        const v = (r + g + b) / 3 > lv ? 255 : 0;
+        return [v, v, v];
+      });
+      break;
+    }
+    case "motion_blur":
+      out = motionBlur(base, Math.max(3, Math.min(51, num(params.size, 15))), num(params.angle, 0));
+      break;
+    case "radial_blur":
+      out = radialBlur(base, Math.max(0, Math.min(100, num(params.strength, 40))));
+      break;
+    case "pixelate":
+      out = pixelateLocal(base, num(params.size, 12));
+      break;
+    case "denoise":
+      out = blurCanvas(base, Math.max(0.4, Math.min(5, num(params.strength, 7) / 4)));
+      break;
+    case "grain":
+      out = grainLocal(base, num(params.amount, 25));
+      break;
+    case "glitch":
+      out = glitchLocal(base, num(params.shift, 18), num(params.slices, 5), num(params.seed, 7));
+      break;
+    case "style":
+      out = styleLocal(base, String(params.name ?? "cinematic"));
+      break;
+    case "filter": {
+      const preset = String(params.preset ?? "blur");
+      if (preset === "emboss") out = convolve(base, [-2, -1, 0, -1, 1, 1, 0, 1, 2]);
+      else if (preset === "contour") {
+        const e = convolve(base, [-1, -1, -1, -1, 8, -1, -1, -1, -1]);
+        out = pixelLoop(e, (r, g, b) => [255 - r, 255 - g, 255 - b]);
+      } else if (preset === "edge_enhance") out = convolve(base, [0, -1, 0, -1, 5, -1, 0, -1, 0]);
+      else if (preset === "smooth" || preset === "median") out = blurCanvas(base, 1);
+      else if (preset === "sharpen") out = sharpen(base, 1);
+      else out = drawFiltered(img, `blur(${Math.max(0, Math.min(20, num(params.radius, 2)))}px)`);
       break;
     }
     default:
