@@ -32,19 +32,19 @@ interface Tool {
 }
 
 const tools: Tool[] = [
-  { id: "select", icon: <MousePointer2 size={16} strokeWidth={1.75} />, label: "Select", shortcut: "V" },
-  { id: "crop", icon: <Crop size={16} strokeWidth={1.75} />, label: "Crop", shortcut: "C" },
-  { id: "brush", icon: <Brush size={16} strokeWidth={1.75} />, label: "Brush", shortcut: "B" },
-  { id: "eraser", icon: <Eraser size={16} strokeWidth={1.75} />, label: "Eraser", shortcut: "E" },
-  { id: "text", icon: <Type size={16} strokeWidth={1.75} />, label: "Text", shortcut: "T" },
-  { id: "shape", icon: <Square size={16} strokeWidth={1.75} />, label: "Shape", shortcut: "U" },
-  { id: "smart-select", icon: <Wand2 size={16} strokeWidth={1.75} />, label: "Smart Select", shortcut: "W" },
-  { id: "eyedropper", icon: <Pipette size={16} strokeWidth={1.75} />, label: "Eyedropper", shortcut: "I" },
+  { id: "select", icon: <MousePointer2 size={18} strokeWidth={1.75} />, label: "Select", shortcut: "V" },
+  { id: "crop", icon: <Crop size={18} strokeWidth={1.75} />, label: "Crop", shortcut: "C" },
+  { id: "brush", icon: <Brush size={18} strokeWidth={1.75} />, label: "Brush", shortcut: "B" },
+  { id: "eraser", icon: <Eraser size={18} strokeWidth={1.75} />, label: "Eraser", shortcut: "E" },
+  { id: "text", icon: <Type size={18} strokeWidth={1.75} />, label: "Text", shortcut: "T" },
+  { id: "shape", icon: <Square size={18} strokeWidth={1.75} />, label: "Shape", shortcut: "U" },
+  { id: "smart-select", icon: <Wand2 size={18} strokeWidth={1.75} />, label: "Smart Select", shortcut: "W" },
+  { id: "eyedropper", icon: <Pipette size={18} strokeWidth={1.75} />, label: "Eyedropper", shortcut: "I" },
 ];
 
 const navTools: Tool[] = [
-  { id: "pan", icon: <Hand size={16} strokeWidth={1.75} />, label: "Pan", shortcut: "H" },
-  { id: "zoom", icon: <ZoomIn size={16} strokeWidth={1.75} />, label: "Zoom", shortcut: "Z" },
+  { id: "pan", icon: <Hand size={18} strokeWidth={1.75} />, label: "Pan", shortcut: "H" },
+  { id: "zoom", icon: <ZoomIn size={18} strokeWidth={1.75} />, label: "Zoom", shortcut: "Z" },
 ];
 
 interface LeftToolbarProps {
@@ -55,9 +55,9 @@ interface LeftToolbarProps {
 export default function LeftToolbar({ activeTool = "select", onToolChange }: LeftToolbarProps) {
   return (
     <div
-      className="flex flex-col items-center py-2 gap-0.5 h-full"
+      className="flex flex-col items-center py-2 gap-1 h-full"
       style={{
-        width: 56,
+        width: 64,
         background: "var(--card)",
         borderRight: "1px solid var(--border)",
       }}
@@ -108,8 +108,8 @@ function ToolButton({
         onClick={handleClick}
         className="flex items-center justify-center rounded transition-all duration-100"
         style={{
-          width: 36,
-          height: 36,
+          width: 42,
+          height: 42,
           color: active ? "var(--accent-foreground)" : hovered ? "var(--foreground)" : "var(--muted-foreground)",
           background: active
             ? "var(--accent)"

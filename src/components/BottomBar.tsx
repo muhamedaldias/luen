@@ -15,7 +15,7 @@ export default function BottomBar({
 }: BottomBarProps) {
   return (
     <div
-      className="flex items-center px-3 gap-4 h-7 shrink-0 select-none"
+      className="flex items-center px-4 gap-5 h-8 shrink-0 select-none"
       style={{
         background: "var(--card)",
         borderTop: "1px solid var(--border)",

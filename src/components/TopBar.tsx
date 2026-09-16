@@ -125,7 +125,7 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
 
   return (
     <div
-      className="flex items-center h-12 px-3 gap-1 shrink-0"
+      className="flex items-center h-[52px] px-3 gap-1 shrink-0"
       style={{
         background: "var(--card)",
         borderBottom: "1px solid var(--border)",
@@ -136,8 +136,8 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
       <div className="flex items-center gap-2 mr-3 select-none">
         <LogoMark />
         <span
-          className="text-sm font-medium tracking-tight"
-          style={{ color: "var(--foreground)", letterSpacing: "-0.01em" }}
+          className="font-medium tracking-tight"
+          style={{ color: "var(--foreground)", letterSpacing: "-0.01em", fontSize: 15 }}
         >
           Lumen
         </span>
@@ -151,11 +151,12 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
         {menus.map((m) => (
           <div key={m.key} className="relative">
             <button
-              className="relative flex items-center gap-0.5 px-2.5 h-7 rounded text-xs transition-colors duration-100"
+              className="relative flex items-center gap-0.5 px-3 h-8 rounded transition-colors duration-100"
               style={{
                 color: openMenu === m.key ? "var(--foreground)" : "var(--muted-foreground)",
                 background: openMenu === m.key ? "var(--secondary)" : "transparent",
                 fontWeight: openMenu === m.key ? 500 : 400,
+                fontSize: 13,
               }}
               onClick={() => {
                 console.log(`[topbar] menu ${m.key}`);
@@ -228,14 +229,14 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
       {/* Primary actions */}
       <div className="flex items-center gap-1 ml-1">
         <ActionBtn
-          icon={<Undo2 size={14} />}
+          icon={<Undo2 size={15} />}
           label="Undo"
           disabled={!canUndo}
           onClick={onUndo}
           shortcut="⌘Z"
         />
         <ActionBtn
-          icon={<Redo2 size={14} />}
+          icon={<Redo2 size={15} />}
           label="Redo"
           disabled={!canRedo}
           onClick={onRedo}
@@ -244,14 +245,15 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
 
         <div className="w-px h-5 mx-1" style={{ background: "var(--border)" }} />
 
-        <ActionBtn icon={<Save size={14} />} label="Save" shortcut="⌘S" onClick={onSave} />
+        <ActionBtn icon={<Save size={15} />} label="Save" shortcut="⌘S" onClick={onSave} />
 
         {/* Export — primary CTA */}
         <button
-          className="flex items-center gap-1.5 px-3 h-7 rounded text-xs font-medium transition-colors duration-100"
+          className="flex items-center gap-1.5 px-3.5 h-8 rounded font-medium transition-colors duration-100"
           style={{
             background: "var(--primary)",
             color: "var(--primary-foreground)",
+            fontSize: 13,
           }}
           onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.88")}
           onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
@@ -265,7 +267,7 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
         <div className="w-px h-5 mx-1" style={{ background: "var(--border)" }} />
 
         <ActionBtn
-          icon={<Settings size={14} />}
+          icon={<Settings size={15} />}
           label="Settings"
           onClick={onSettingsOpen}
           shortcut="⌘,"
@@ -295,7 +297,7 @@ function ActionBtn({
       <button
         disabled={disabled}
         onClick={onClick}
-        className="flex items-center justify-center w-7 h-7 rounded transition-colors duration-100"
+        className="flex items-center justify-center w-8 h-8 rounded transition-colors duration-100"
         style={{
           color: disabled ? "var(--muted-foreground)" : hovered ? "var(--foreground)" : "var(--muted-foreground)",
           background: hovered && !disabled ? "var(--secondary)" : "transparent",
@@ -328,7 +330,7 @@ function ActionBtn({
 
 function LogoMark() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+    <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
       <rect x="2" y="2" width="6" height="14" rx="1.5" fill="#C97B4A" />
       <rect x="10" y="2" width="6" height="8" rx="1.5" fill="#C97B4A" opacity="0.55" />
       <rect x="10" y="12" width="6" height="4" rx="1.5" fill="#C97B4A" opacity="0.3" />

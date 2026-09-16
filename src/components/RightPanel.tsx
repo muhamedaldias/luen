@@ -29,10 +29,10 @@ import { BLEND_MODES, type LayerRef } from "../lib/layerSystem";
 type TabId = "layers" | "design" | "adjustments" | "history";
 
 const tabs: { id: TabId; icon: React.ReactNode; label: string }[] = [
-  { id: "layers", icon: <Layers size={14} strokeWidth={1.75} />, label: "Layers" },
-  { id: "design", icon: <PenTool size={14} strokeWidth={1.75} />, label: "Design" },
-  { id: "adjustments", icon: <SlidersHorizontal size={14} strokeWidth={1.75} />, label: "Adjust" },
-  { id: "history", icon: <Clock size={14} strokeWidth={1.75} />, label: "History" },
+  { id: "layers", icon: <Layers size={15} strokeWidth={1.75} />, label: "Layers" },
+  { id: "design", icon: <PenTool size={15} strokeWidth={1.75} />, label: "Design" },
+  { id: "adjustments", icon: <SlidersHorizontal size={15} strokeWidth={1.75} />, label: "Adjust" },
+  { id: "history", icon: <Clock size={15} strokeWidth={1.75} />, label: "History" },
 ];
 
 interface RightPanelProps {
@@ -134,13 +134,14 @@ export default function RightPanel({
           <button
             key={tab.id}
             onClick={() => onTabChange?.(tab.id)}
-            className="flex items-center justify-center gap-1.5 px-2 py-2.5 text-xs transition-colors duration-100 relative shrink-0"
+            className="flex items-center justify-center gap-1.5 px-2 py-3 transition-colors duration-100 relative shrink-0"
             style={{
               color: activeTab === tab.id ? "var(--foreground)" : "var(--muted-foreground)",
               fontWeight: activeTab === tab.id ? 600 : 400,
               flex: 1,
               minWidth: 0,
               whiteSpace: "nowrap",
+              fontSize: 13,
             }}
             title={tab.label}
           >
@@ -441,8 +442,8 @@ function LayersTab({
     if (kind === "background") return <ImageIcon size={12} strokeWidth={1.75} style={{ color: "var(--muted-foreground)" }} />;
     if (kind === "text") return <Type size={12} strokeWidth={1.75} style={{ color: "var(--accent)" }} />;
     if (kind === "image") {
-      if (m.thumb) return <img src={m.thumb} alt="" style={{ width: 24, height: 24, objectFit: "cover", borderRadius: 4 }} draggable={false} />;
-      return <ImageIcon size={12} strokeWidth={1.75} style={{ color: "#7FB8FF" }} />;
+      if (m.thumb) return <img src={m.thumb} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} draggable={false} />;
+      return <ImageIcon size={13} strokeWidth={1.75} style={{ color: "#7FB8FF" }} />;
     }
     if (kind === "shape") return <span style={{ fontSize: 12 }}>⬢</span>;
     if (kind === "solid") return <span style={{ width: 12, height: 12, borderRadius: 3, background: m.color ?? "#888", display: "inline-block" }} />;
@@ -547,7 +548,7 @@ function LayersTab({
                   setOverId(null);
                 }}
                 onDragEnd={() => { setDragId(null); setOverId(null); }}
-                className="flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors duration-75 w-full"
+                className="flex items-center gap-2 px-2 py-2 cursor-pointer transition-colors duration-75 w-full"
                 style={{
                   background: active ? "var(--secondary)" : dragId === ref.id ? "rgba(201,123,74,0.08)" : "transparent",
                   borderLeft: `2px solid ${active ? "var(--accent)" : inGroup ? "rgba(201,123,74,0.5)" : "transparent"}`,
@@ -563,7 +564,7 @@ function LayersTab({
                 title={ref.kind === "background" ? "Background (locked bottom)" : `${ref.kind} · drag to reorder · Ctrl+click multi-select · double-click rename`}
               >
                 <span style={{ color: "var(--muted-foreground)", fontSize: 10, cursor: ref.id === "__background__" ? "default" : "grab", flexShrink: 0 }}>⋮⋮</span>
-                <div className="rounded shrink-0 flex items-center justify-center" style={{ width: 24, height: 24, background: "#2A2927", border: "1px solid var(--border)", overflow: "hidden" }}>
+                <div className="rounded shrink-0 flex items-center justify-center" style={{ width: 28, height: 28, background: "#2A2927", border: "1px solid var(--border)", overflow: "hidden" }}>
                   {iconFor(ref.kind, ref.id, mm)}
                 </div>
                 {editingId === ref.id ? (
@@ -607,7 +608,7 @@ function LayersTab({
                   {ref.kind === "background" ? "BG" : ref.kind === "text" ? "T" : ref.kind === "image" ? "Img" : ref.kind === "shape" ? "◆" : "Fill"}{mm.opacity < 100 ? ` ${mm.opacity}%` : ""}
                 </span>
                 <button onClick={(e) => { e.stopPropagation(); toggleVisible(ref.kind, ref.id); }} className="shrink-0" style={{ color: mm.visible ? "var(--muted-foreground)" : "#4A4845", background: "transparent", border: "none", cursor: "pointer", padding: 2 }} title={mm.visible ? "Hide layer" : "Show layer"}>
-                  {mm.visible ? <Eye size={13} strokeWidth={1.75} /> : <EyeOff size={13} strokeWidth={1.75} />}
+                  {mm.visible ? <Eye size={14} strokeWidth={1.75} /> : <EyeOff size={14} strokeWidth={1.75} />}
                 </button>
                 {mm.locked && <Lock size={11} strokeWidth={1.75} style={{ color: "var(--muted-foreground)", opacity: 0.5, flexShrink: 0 }} />}
               </div>
@@ -677,12 +678,12 @@ function GenericDesign({ title, children, onDelete, onDuplicate }: { title: stri
         <div className="flex flex-col gap-1.5">{children}</div>
         <div className="flex gap-1.5 mt-2">
           {onDuplicate && (
-            <button onClick={onDuplicate} className="flex-1 h-8 rounded text-xs font-medium" style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer" }}>
+            <button onClick={onDuplicate} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer" }}>
               Duplicate
             </button>
           )}
           {onDelete && (
-            <button onClick={onDelete} className="flex-1 h-8 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>
+            <button onClick={onDelete} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>
               Delete
             </button>
           )}
@@ -767,7 +768,7 @@ function DesignTab({
         <select
           value={layer.fontFamily}
           onChange={(e) => up({ fontFamily: e.target.value })}
-          className="w-full h-8 rounded text-xs outline-none"
+          className="w-full h-9 rounded text-xs outline-none"
           style={{ background: "var(--secondary)", border: "1px solid var(--border)", color: "var(--foreground)", padding: "0 8px", minWidth: 0 }}
         >
           {FONT_OPTIONS.map((f) => (
@@ -781,7 +782,7 @@ function DesignTab({
             <button
               key={w.value}
               onClick={() => up({ fontWeight: w.value })}
-              className="flex-1 h-7 rounded text-xs truncate"
+              className="flex-1 h-8 rounded text-xs truncate"
               style={{
                 background: layer.fontWeight === w.value ? "var(--accent)" : "var(--secondary)",
                 color: layer.fontWeight === w.value ? "var(--accent-foreground)" : "var(--muted-foreground)",
@@ -789,7 +790,7 @@ function DesignTab({
                 cursor: "pointer",
                 fontWeight: w.value,
                 minWidth: 0,
-                fontSize: 10,
+                fontSize: 11,
               }}
             >
               {w.label}
@@ -897,17 +898,17 @@ function DesignTab({
         <div className="flex gap-1.5 w-full" style={{ minWidth: 0 }}>
           <button
             onClick={() => onDuplicateText?.(layer.id)}
-            className="flex-1 h-8 rounded text-xs font-medium flex items-center justify-center gap-1.5"
+            className="flex-1 h-9 rounded text-xs font-medium flex items-center justify-center gap-1.5"
             style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer", minWidth: 0 }}
           >
-            <Copy size={12} strokeWidth={2} /> Duplicate
+            <Copy size={13} strokeWidth={2} /> Duplicate
           </button>
           <button
             onClick={() => { onDeleteText?.(layer.id); onSelectText?.(null); }}
-            className="flex-1 h-8 rounded text-xs font-medium flex items-center justify-center gap-1.5"
+            className="flex-1 h-9 rounded text-xs font-medium flex items-center justify-center gap-1.5"
             style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer", minWidth: 0 }}
           >
-            <Trash2 size={12} strokeWidth={2} /> Delete
+            <Trash2 size={13} strokeWidth={2} /> Delete
           </button>
         </div>
         <div className="flex gap-1.5 mt-1.5">
@@ -1071,7 +1072,7 @@ function AdjustmentsTab({
               key={f.label}
               disabled={applying || bgBusy || !hasImage}
               onClick={() => void quickFilter(f.op, f.params)}
-              className="h-8 rounded text-xs font-medium truncate"
+              className="h-9 rounded text-xs font-medium truncate"
               style={{
                 background: "var(--secondary)",
                 color: "var(--foreground)",
@@ -1127,7 +1128,7 @@ function AdjustmentsTab({
         <button
           disabled={applying || !hasImage}
           onClick={apply}
-          className="flex-1 h-8 rounded text-xs font-medium transition-colors duration-100"
+          className="flex-1 h-9 rounded text-xs font-medium transition-colors duration-100"
           style={{
             background: "var(--primary)",
             color: "var(--primary-foreground)",
@@ -1140,7 +1141,7 @@ function AdjustmentsTab({
           {applying ? "Applying…" : "Apply"}
         </button>
         <button
-          className="h-8 px-3 rounded text-xs transition-colors duration-100 shrink-0"
+          className="h-9 px-3 rounded text-xs transition-colors duration-100 shrink-0"
           style={{
             background: "var(--secondary)",
             color: "var(--foreground)",
@@ -1261,7 +1262,7 @@ function ComparisonStrip() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="py-2.5 w-full" style={{ borderBottom: "1px solid var(--border)", minWidth: 0 }}>
-      <p className="text-xs font-semibold mb-2 tracking-wide" style={{ color: "var(--muted-foreground)", fontSize: 10, letterSpacing: "0.08em" }}>
+      <p className="font-semibold mb-2 tracking-wide" style={{ color: "var(--muted-foreground)", fontSize: 11, letterSpacing: "0.08em" }}>
         {title.toUpperCase()}
       </p>
       <div className="flex flex-col gap-1.5 w-full" style={{ minWidth: 0 }}>{children}</div>
@@ -1281,7 +1282,7 @@ function BlendRow({ value, onChange }: { value: string; onChange: (v: string) =>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-8 rounded text-xs outline-none"
+        className="w-full h-9 rounded text-xs outline-none"
         style={{ background: "var(--secondary)", border: "1px solid var(--border)", color: "var(--foreground)", padding: "0 8px", minWidth: 0 }}
       >
         {BLEND_MODES.map((b) => (
@@ -1293,7 +1294,7 @@ function BlendRow({ value, onChange }: { value: string; onChange: (v: string) =>
 }
 
 function ArrangeRow({ onMove }: { onMove: (d: "front" | "back" | "forward" | "backward") => void }) {
-  const btn: React.CSSProperties = { flex: 1, height: 26, borderRadius: 4, fontSize: 10, cursor: "pointer", background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", minWidth: 0 };
+  const btn: React.CSSProperties = { flex: 1, height: 30, borderRadius: 4, fontSize: 11, cursor: "pointer", background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", minWidth: 0 };
   return (
     <div className="w-full" style={{ minWidth: 0 }}>
       <div className="mb-1"><span className="text-xs" style={{ color: "var(--muted-foreground)" }}>Arrange</span></div>
@@ -1324,19 +1325,19 @@ function SliderRow({ label, value, min, max, step = 1, onChange, suffix }: { lab
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center gap-2 w-full" style={{ minWidth: 0 }}>
-      <span className="text-xs shrink-0" style={{ color: "var(--muted-foreground)", width: 52 }}>{label}</span>
+      <span className="text-xs shrink-0" style={{ color: "var(--muted-foreground)", width: 56 }}>{label}</span>
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="shrink-0 rounded cursor-pointer"
-        style={{ width: 30, height: 24, padding: 0, background: "transparent", border: "1px solid var(--border)" }}
+        style={{ width: 34, height: 28, padding: 0, background: "transparent", border: "1px solid var(--border)" }}
       />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         spellCheck={false}
-        className="flex-1 h-7 px-2 rounded text-xs outline-none"
+        className="flex-1 h-8 px-2 rounded text-xs outline-none"
         style={{ background: "var(--secondary)", border: "1px solid var(--border)", color: "var(--foreground)", fontFamily: "monospace", minWidth: 0 }}
       />
     </div>
@@ -1350,15 +1351,15 @@ function ToggleLine({ label, value, onChange }: { label: string; value: boolean;
       <button
         onClick={() => onChange(!value)}
         className="relative rounded-full transition-colors duration-200 shrink-0"
-        style={{ width: 32, height: 18, background: value ? "var(--accent)" : "var(--secondary)", border: "1px solid var(--border)", cursor: "pointer", padding: 0 }}
+        style={{ width: 36, height: 20, background: value ? "var(--accent)" : "var(--secondary)", border: "1px solid var(--border)", cursor: "pointer", padding: 0 }}
       >
         <div
           className="absolute top-0.5 rounded-full transition-transform duration-200"
           style={{
-            width: 12,
-            height: 12,
+            width: 14,
+            height: 14,
             background: value ? "var(--primary-foreground)" : "var(--muted-foreground)",
-            transform: value ? "translateX(15px)" : "translateX(2px)",
+            transform: value ? "translateX(18px)" : "translateX(2px)",
           }}
         />
       </button>
@@ -1373,8 +1374,8 @@ function ToggleBtn({ active, onClick, label, children }: { active: boolean; onCl
       title={label}
       className="flex items-center justify-center rounded shrink-0"
       style={{
-        width: 28,
-        height: 28,
+        width: 30,
+        height: 30,
         background: active ? "var(--accent)" : "var(--secondary)",
         color: active ? "var(--accent-foreground)" : "var(--muted-foreground)",
         border: "1px solid var(--border)",
@@ -1389,8 +1390,8 @@ function ToggleBtn({ active, onClick, label, children }: { active: boolean; onCl
 function MiniNumber({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
     <div className="flex items-center gap-1" style={{ minWidth: 0 }}>
-      <span className="text-xs shrink-0 text-center" style={{ color: "var(--muted-foreground)", width: 26, fontSize: 10 }}>{label}</span>
-      <div className="flex flex-1 items-center rounded" style={{ background: "var(--secondary)", border: "1px solid var(--border)", height: 26, paddingLeft: 6, paddingRight: 6, minWidth: 0 }}>
+      <span className="shrink-0 text-center" style={{ color: "var(--muted-foreground)", width: 28, fontSize: 11 }}>{label}</span>
+      <div className="flex flex-1 items-center rounded" style={{ background: "var(--secondary)", border: "1px solid var(--border)", height: 30, paddingLeft: 8, paddingRight: 8, minWidth: 0 }}>
         <input
           type="number"
           value={value}
@@ -1424,8 +1425,8 @@ function Slider({ min, max, value, step = 1, onChange }: { min: number; max: num
       <style>{`
         input[type=range]::-webkit-slider-thumb {
           -webkit-appearance: none;
-          width: 12px;
-          height: 12px;
+          width: 14px;
+          height: 14px;
           border-radius: 50%;
           background: var(--accent);
           border: 2px solid var(--card);
@@ -1443,7 +1444,7 @@ function Slider({ min, max, value, step = 1, onChange }: { min: number; max: num
 function SmallIconBtn({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) {
   return (
     <button
-      className="flex items-center justify-center w-6 h-6 rounded transition-colors duration-75"
+      className="flex items-center justify-center w-7 h-7 rounded transition-colors duration-75"
       style={{ color: "var(--muted-foreground)", background: "transparent", border: "none", cursor: "pointer" }}
       title={label}
       onClick={onClick}

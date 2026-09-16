@@ -1421,10 +1421,10 @@ export default function App() {
                 onClick={() => setShapeKind(k)}
                 title={k === "rect" ? "Rectangle (U)" : "Ellipse (U, or hold Shift while dragging)"}
                 style={{
-                  height: 28,
-                  padding: "0 12px",
+                  height: 30,
+                  padding: "0 14px",
                   borderRadius: 6,
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: 600,
                   cursor: "pointer",
                   border: "none",
