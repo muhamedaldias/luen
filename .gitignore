@@ -28,3 +28,6 @@ backend/.env
 backend/storage/
 backend/*.db
 backend/alembic/versions/*.pyc
+
+# local python env
+backend/.venv/
