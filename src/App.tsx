@@ -128,6 +128,7 @@ export default function App() {
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
   const [newLayerOpen, setNewLayerOpen] = useState(false);
   const [blendOpen, setBlendOpen] = useState(false);
+  const [shapeKind, setShapeKind] = useState<"rect" | "ellipse">("rect");
 
   // ── Undo/Redo: لقطات Memento بحد تكيّفي حسب حجم الصورة (انظر lib/history.ts) ──
   const [history, setHistory] = useState<HistoryEntry[]>([emptyEntry("Open")]);
@@ -143,6 +144,8 @@ export default function App() {
   const orderRef = useRef<LayerRef[]>([]);
   const groupsRef = useRef<Record<string, string>>({});
   const selectedTextIdRef = useRef<string | null>(null);
+  const activeToolRef = useRef<ToolId>("select");
+  const shapeKindRef = useRef<"rect" | "ellipse">("rect");
   const [canvasImage, setCanvasImage] = useState<CanvasImage | null>(null);
 
   useEffect(() => {
@@ -151,6 +154,12 @@ export default function App() {
   useEffect(() => {
     selectedTextIdRef.current = selectedTextId;
   }, [selectedTextId]);
+  useEffect(() => {
+    activeToolRef.current = activeTool;
+  }, [activeTool]);
+  useEffect(() => {
+    shapeKindRef.current = shapeKind;
+  }, [shapeKind]);
   useEffect(() => {
     layersRef.current = textLayers;
   }, [textLayers]);
@@ -236,6 +245,13 @@ export default function App() {
       else if (k === "e") setActiveTool("eraser");
       else if (k === "h") setActiveTool("pan");
       else if (k === "z") setActiveTool("zoom");
+      else if (k === "u") {
+        if (activeToolRef.current === "shape") {
+          setShapeKind(shapeKindRef.current === "rect" ? "ellipse" : "rect");
+        } else {
+          setActiveTool("shape");
+        }
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -595,6 +611,28 @@ export default function App() {
       pushHistory("Add solid fill", { solidLayers: next });
     },
     [handleAddText, pushHistory]
+  );
+
+  const handleShapeDraw = useCallback(
+    (shape: "rect" | "ellipse", geom: { x: number; y: number; w: number; h: number }) => {
+      const layer = createShapeLayer({
+        shape,
+        x: geom.x,
+        y: geom.y,
+        w: geom.w,
+        h: geom.h,
+        name: shape === "ellipse" ? "Ellipse" : "Rectangle",
+      });
+      const next = [...shapeLayersRef.current, layer];
+      setShapeLayers(next);
+      setSelectedLayer({ kind: "shape", id: layer.id });
+      setSelectedTextId(null);
+      setSelectedIds([layer.id]);
+      setRightTab("layers");
+      setActiveTool("select");
+      pushHistory(shape === "ellipse" ? "Draw ellipse" : "Draw rectangle", { shapeLayers: next });
+    },
+    [pushHistory]
   );
 
   const handleDeleteGeneric = useCallback(
@@ -1361,6 +1399,45 @@ export default function App() {
       <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden relative">
         <LeftToolbar activeTool={activeTool} onToolChange={setActiveTool} />
 
+        {activeTool === "shape" && (
+          <div
+            style={{
+              position: "absolute",
+              left: 64,
+              bottom: 48,
+              zIndex: 50,
+              display: "flex",
+              gap: 4,
+              padding: 4,
+              borderRadius: 8,
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            }}
+          >
+            {(["rect", "ellipse"] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setShapeKind(k)}
+                title={k === "rect" ? "Rectangle (U)" : "Ellipse (U, or hold Shift while dragging)"}
+                style={{
+                  height: 28,
+                  padding: "0 12px",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  border: "none",
+                  background: shapeKind === k ? "var(--accent)" : "transparent",
+                  color: shapeKind === k ? "var(--accent-foreground)" : "var(--muted-foreground)",
+                }}
+              >
+                {k === "rect" ? "Rect" : "Ellipse"}
+              </button>
+            ))}
+          </div>
+        )}
+
         <Group orientation="horizontal" className="flex-1 min-w-0 min-h-0">
           <Panel defaultSize={rightCollapsed ? 100 : 66} minSize={20} style={{ minWidth: 0, overflow: "hidden" }}>
             <Canvas
@@ -1392,6 +1469,8 @@ export default function App() {
               onDeleteText={handleDeleteText}
               onCommitHistory={pushHistory}
               onSmartSelect={() => void handleRemoveBackground()}
+              shapeKind={shapeKind}
+              onShapeDraw={handleShapeDraw}
               imageLayers={imageLayers}
               shapeLayers={shapeLayers}
               solidLayers={solidLayers}

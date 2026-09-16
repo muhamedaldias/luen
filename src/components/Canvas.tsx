@@ -35,6 +35,8 @@ interface CanvasProps {
   layerOrder?: { kind: string; id: string }[];
   selectedIds?: string[];
   onSelectMany?: (ids: string[]) => void;
+  shapeKind?: "rect" | "ellipse";
+  onShapeDraw?: (shape: "rect" | "ellipse", geom: { x: number; y: number; w: number; h: number }) => void;
 }
 
 export interface FabricStageHandle {
@@ -92,6 +94,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     onUpdateImageLayer,
     onUpdateShapeLayer,
     layerOrder,
+    shapeKind = "rect",
+    onShapeDraw,
   } = props;
 
   const [draggingOver, setDraggingOver] = useState(false);
@@ -117,13 +121,14 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   const transformSkip = useRef(new Set<string>());
   const editingSkip = useRef(new Set<string>());
   const pendingEdit = useRef(false);
-  const gesture = useRef<{ mode: "pan" | "shape" | "crop" | null; startX: number; startY: number; lastX: number; lastY: number; temp: Rect | null }>({
+  const gesture = useRef<{ mode: "pan" | "shape" | "crop" | null; startX: number; startY: number; lastX: number; lastY: number; temp: FabricObject | null; shapeDraw: "rect" | "ellipse" | null }>({
     mode: null,
     startX: 0,
     startY: 0,
     lastX: 0,
     lastY: 0,
     temp: null,
+    shapeDraw: null,
   });
   const erasing = useRef({ active: false, dirty: false });
   const lastCommitted = useRef<string | null>(null);
@@ -132,8 +137,10 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   toolRef.current = activeTool;
   zoomRef.current = zoom;
 
-  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer });
-  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer };
+  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw });
+  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw };
+  const shapeKindRef = useRef(shapeKind);
+  shapeKindRef.current = shapeKind;
   const layersRef = useRef(textLayers);
   layersRef.current = textLayers;
   const imageLayersRef = useRef(imageLayers);
@@ -554,7 +561,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
 
   /* ---------- الدمج (raster commit) ---------- */
 
-  const commitRaster = useCallback(async (region?: StageBox | null, includeTemp?: Rect | null): Promise<string | null> => {
+  const commitRaster = useCallback(async (region?: StageBox | null, includeTemp?: FabricObject | null): Promise<string | null> => {
     const fc = fRef.current;
     if (!fc || !bgRef.current) return null;
     const box = viewRef.current.box;
@@ -762,7 +769,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     transformSkip.current.clear();
     editingSkip.current.clear();
     bgRef.current = null;
-    gesture.current = { mode: null, startX: 0, startY: 0, lastX: 0, lastY: 0, temp: null };
+    gesture.current = { mode: null, startX: 0, startY: 0, lastX: 0, lastY: 0, temp: null, shapeDraw: null };
 
     const fc = new FabricCanvas(el, {
       preserveObjectStacking: true,
@@ -785,7 +792,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       const e = o.e;
       if (e.button === 2 && tool !== "zoom") return;
       if (tool === "pan") {
-        gesture.current = { mode: "pan", startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, temp: gesture.current.temp };
+        gesture.current = { mode: "pan", startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, temp: gesture.current.temp, shapeDraw: gesture.current.shapeDraw };
         return;
       }
       if (tool === "zoom") {
@@ -831,8 +838,37 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         return;
       }
       if (tool === "select") return;
-      if (!hasImageRef.current) return;
-      if (tool === "shape" || tool === "crop") {
+      if (tool === "shape") {
+        const box = viewRef.current.box;
+        const r = el.getBoundingClientRect();
+        const v = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0];
+        const px = (e.clientX - r.left - v[4]) / v[0];
+        const py = (e.clientY - r.top - v[5]) / v[3];
+        const fx = (px - box.x) / Math.max(1, box.w);
+        const fy = (py - box.y) / Math.max(1, box.h);
+        if (fx < -0.2 || fx > 1.2 || fy < -0.2 || fy > 1.2) return;
+        const withShift = (e as PointerEvent & { shiftKey?: boolean }).shiftKey === true;
+        const kind: "rect" | "ellipse" = withShift ? "ellipse" : shapeKindRef.current;
+        const preview = {
+          left: px,
+          top: py,
+          fill: "transparent",
+          stroke: ACCENT,
+          strokeWidth: 2,
+          selectable: false,
+          evented: false,
+        };
+        const temp: FabricObject = kind === "ellipse" ? new Ellipse({ ...preview, rx: 1, ry: 1 }) : new Rect({ ...preview, width: 1, height: 1 });
+        (temp as unknown as Record<string, unknown>).isTemp = true;
+        gesture.current = { mode: "shape", startX: px, startY: py, lastX: px, lastY: py, temp, shapeDraw: kind };
+        fc.add(temp);
+        return;
+      }
+      if (!hasImageRef.current) {
+        if (tool === "crop") showToast("Open an image first — then crop");
+        return;
+      }
+      if (tool === "crop") {
         const p = (function () {
           const r = el.getBoundingClientRect();
           const v = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0];
@@ -844,14 +880,14 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           width: 1,
           height: 1,
           fill: "transparent",
-          stroke: tool === "crop" ? "#ffffff" : ACCENT,
-          strokeWidth: tool === "crop" ? 1.5 : 2,
-          strokeDashArray: tool === "crop" ? [8, 6] : undefined,
+          stroke: "#ffffff",
+          strokeWidth: 1.5,
+          strokeDashArray: [8, 6],
           selectable: false,
           evented: false,
         });
         (temp as unknown as Record<string, unknown>).isTemp = true;
-        gesture.current = { mode: tool, startX: p.x, startY: p.y, lastX: p.x, lastY: p.y, temp };
+        gesture.current = { mode: tool, startX: p.x, startY: p.y, lastX: p.x, lastY: p.y, temp, shapeDraw: null };
         fc.add(temp);
         return;
       }
@@ -884,12 +920,21 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         const v = fc2.viewportTransform ?? [1, 0, 0, 1, 0, 0];
         const px = (e.clientX - r.left - v[4]) / v[0];
         const py = (e.clientY - r.top - v[5]) / v[3];
-        g.temp.set({
-          left: Math.min(g.startX, px),
-          top: Math.min(g.startY, py),
-          width: Math.max(1, Math.abs(px - g.startX)),
-          height: Math.max(1, Math.abs(py - g.startY)),
-        });
+        if (g.mode === "shape" && g.shapeDraw === "ellipse" && g.temp instanceof Ellipse) {
+          g.temp.set({
+            left: Math.min(g.startX, px),
+            top: Math.min(g.startY, py),
+            rx: Math.max(1, Math.abs(px - g.startX) / 2),
+            ry: Math.max(1, Math.abs(py - g.startY) / 2),
+          });
+        } else {
+          g.temp.set({
+            left: Math.min(g.startX, px),
+            top: Math.min(g.startY, py),
+            width: Math.max(1, Math.abs(px - g.startX)),
+            height: Math.max(1, Math.abs(py - g.startY)),
+          });
+        }
         g.temp.setCoords();
         fc2.requestRenderAll();
         return;
@@ -908,14 +953,14 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       }
       if ((g.mode === "shape" || g.mode === "crop") && g.temp) {
         const t = g.temp;
-        const w = t.width * (t.scaleX || 1);
-        const h = t.height * (t.scaleY || 1);
         const isCrop = g.mode === "crop";
-        const need = isCrop ? 12 : 4;
         g.mode = null;
-        if (w > need && h > need) {
-          const region = { x: t.left, y: t.top, w, h };
-          if (isCrop) {
+        if (isCrop) {
+          const rt = t as Rect;
+          const w = rt.width * (rt.scaleX || 1);
+          const h = rt.height * (rt.scaleY || 1);
+          if (w > 12 && h > 12) {
+            const region = { x: rt.left, y: rt.top, w, h };
             void (async () => {
               const url = await commitRaster(region, null);
               if (url) {
@@ -931,16 +976,42 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
               }
             })();
           } else {
-            try {
-              t.set({ strokeDashArray: undefined });
-            } catch {
-              /* تجاهل */
+            const fc2 = fRef.current;
+            if (fc2) {
+              fc2.remove(t);
+              fc2.requestRenderAll();
             }
-            void (async () => {
-              const url = await commitRaster(null, t);
-              if (url) handlersRef.current.onEditCommit?.(url);
-            })();
+            g.temp = null;
           }
+          return;
+        }
+        const kind = g.shapeDraw ?? "rect";
+        let w: number;
+        let h: number;
+        if (kind === "ellipse" && t instanceof Ellipse) {
+          w = Math.abs(t.rx || 1) * 2 * (t.scaleX || 1);
+          h = Math.abs(t.ry || 1) * 2 * (t.scaleY || 1);
+        } else {
+          const rt = t as Rect;
+          w = rt.width * (rt.scaleX || 1);
+          h = rt.height * (rt.scaleY || 1);
+        }
+        if (w > 4 && h > 4) {
+          const box = viewRef.current.box;
+          const geom = {
+            x: Math.min(0.95, Math.max(-0.2, (t.left - box.x) / Math.max(1, box.w))),
+            y: Math.min(0.95, Math.max(-0.2, (t.top - box.y) / Math.max(1, box.h))),
+            w: Math.min(1.2, Math.max(0.02, w / Math.max(1, box.w))),
+            h: Math.min(1.2, Math.max(0.02, h / Math.max(1, box.h))),
+          };
+          const fc2 = fRef.current;
+          if (fc2) {
+            fc2.remove(t);
+            fc2.requestRenderAll();
+          }
+          g.temp = null;
+          g.shapeDraw = null;
+          handlersRef.current.onShapeDraw?.(kind, geom);
         } else {
           const fc2 = fRef.current;
           if (fc2) {
@@ -948,6 +1019,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             fc2.requestRenderAll();
           }
           g.temp = null;
+          g.shapeDraw = null;
         }
         return;
       }
