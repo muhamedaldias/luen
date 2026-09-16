@@ -18,15 +18,24 @@ pyinstaller lumen.spec --noconfirm
 
 ```powershell
 npm run build
-cd src-tauri
+cd backend
+pyinstaller lumen.spec --noconfirm
+Copy-Item dist\lumen-backend\lumen-backend.exe ..\src-tauri\binaries\lumen-backend-x86_64-pc-windows-msvc.exe
+cd ..\src-tauri
 cargo tauri build
 ```
 
-`src-tauri/tauri.conf.json` جاهز ويشير إلى `../dist`.
+`src-tauri/` الآن سقالة كاملة: `Cargo.toml` + `src/main.rs` + `capabilities/`
++ `tauri.conf.json` (يشير إلى `../dist` + `externalBin: binaries/lumen-backend`).
 الباكند المجمّع يُشغَّل كـ sidecar (يُدار من Tauri) ويخدم الواجهة عبر `http://localhost:8000`.
+ملاحظة تسمية الـ sidecar: لاحقة الثنائي = target triple
+(`lumen-backend-x86_64-pc-windows-msvc.exe` لويندوز).
 
 ## ملاحظات
 
+- الأيقونات الحالية مولّدة محلياً بـ `python packaging/gen_icons.py`
+  (stdlib فقط، بلا اعتماديات). للإنتاج على macOS ولّد `icon.icns` عبر
+  `cargo tauri icon src-tauri/icons/icon.png` ثم أعده لقائمة `bundle.icon`.
 - نموذج `rembg` (~44-176MB) يُنزَّل عند أول إزالة خلفية ما لم تضمّنه يدوياً في الحزمة.
 - `react-router` **غير مضاف عمداً**: التطبيق صفحة واحدة (محرر) ولا يحتاج توجيهاً — إضافته كانت ستضخم الحزمة بلا فائدة.
 - المصادقة: التطبيق محلي single-user (`default_user_id="local"`) — لا JWT. الحماية المطبقة: حصر `serve_storage` على المستخدم الافتراضي + منع traversal + حد بكسلات.
