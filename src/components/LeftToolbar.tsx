@@ -6,6 +6,7 @@ import {
   Type,
   Square,
   Wand2,
+  Lasso,
   Eraser,
   Pipette,
   Hand,
@@ -19,6 +20,8 @@ type ToolId =
   | "text"
   | "shape"
   | "smart-select"
+  | "magic-wand"
+  | "quick-select"
   | "eraser"
   | "eyedropper"
   | "pan"
@@ -39,6 +42,7 @@ const tools: Tool[] = [
   { id: "text", icon: <Type size={18} strokeWidth={1.75} />, label: "Text", shortcut: "T" },
   { id: "shape", icon: <Square size={18} strokeWidth={1.75} />, label: "Shape", shortcut: "U" },
   { id: "smart-select", icon: <Wand2 size={18} strokeWidth={1.75} />, label: "Smart Select", shortcut: "W" },
+  { id: "quick-select", icon: <Lasso size={18} strokeWidth={1.75} />, label: "Quick Select", shortcut: "Q" },
   { id: "eyedropper", icon: <Pipette size={18} strokeWidth={1.75} />, label: "Eyedropper", shortcut: "I" },
 ];
 
@@ -55,9 +59,9 @@ interface LeftToolbarProps {
 export default function LeftToolbar({ activeTool = "select", onToolChange }: LeftToolbarProps) {
   return (
     <div
-      className="flex flex-col items-center py-2 gap-1 h-full"
+      className="flex flex-col items-center py-3 gap-2 h-full"
       style={{
-        width: 64,
+        width: 72,
         background: "var(--card)",
         borderRight: "1px solid var(--border)",
       }}
@@ -108,8 +112,8 @@ function ToolButton({
         onClick={handleClick}
         className="flex items-center justify-center rounded transition-all duration-100"
         style={{
-          width: 42,
-          height: 42,
+          width: 48,
+          height: 48,
           color: active ? "var(--accent-foreground)" : hovered ? "var(--foreground)" : "var(--muted-foreground)",
           background: active
             ? "var(--accent)"
@@ -126,9 +130,9 @@ function ToolButton({
 
       {hovered && (
         <div
-          className="absolute left-full ml-2.5 px-2 py-1 text-xs whitespace-nowrap z-50 pointer-events-none flex items-center gap-2"
+          className="absolute left-full ml-3 px-2.5 py-1 text-sm whitespace-nowrap z-50 pointer-events-none flex items-center gap-2"
           style={{
-            background: "#232220",
+            background: "var(--elevated)",
             border: "1px solid var(--border)",
             borderRadius: "var(--radius)",
             color: "var(--foreground)",
@@ -138,7 +142,7 @@ function ToolButton({
           {tool.label}
           {tool.shortcut && (
             <span
-              className="text-xs px-1 rounded"
+              className="text-sm px-1.5 rounded"
               style={{
                 color: "var(--muted-foreground)",
                 background: "var(--secondary)",

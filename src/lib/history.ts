@@ -23,6 +23,9 @@ export interface HistoryEntry {
   strokes: object[];
   order: LayerRef[];
   groups: Record<string, string>;
+  /** Magic-wand selection mask (PNG dataURL, white = selected) + invert flag. */
+  selectionMask: string | null;
+  selectionInverted: boolean;
 }
 
 /** عمق السجل حسب حجم الصورة المقدّر. */
@@ -48,6 +51,8 @@ export function emptyEntry(label: string): HistoryEntry {
     strokes: [],
     order: [],
     groups: {},
+    selectionMask: null,
+    selectionInverted: false,
   };
 }
 

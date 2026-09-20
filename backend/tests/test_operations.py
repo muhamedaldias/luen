@@ -149,7 +149,18 @@ def test_resize_canvas_and_upscale(client):
     image = _upload(client)
     iid = image["image_id"]
     _run(client, iid, "resize_canvas", {"width": 300, "height": 200, "anchor": "center", "bg": "#000000"})
-    _run(client, iid, "upscale", {"scale": 2})
+    res = client.post("/api/operations/upscale", json={"image_id": iid, "params": {"scale": 2}})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] in ("done", "processing")
+
+
+def test_pro_adjustments_operations(client):
+    image = _upload(client)
+    iid = image["image_id"]
+    _run(client, iid, "levels", {"in_black": 10, "in_white": 245, "gamma": 1.1, "out_black": 0, "out_white": 255})
+    _run(client, iid, "curves", {"points": [{"x": 0, "y": 0}, {"x": 64, "y": 50}, {"x": 192, "y": 210}, {"x": 255, "y": 255}]})
+    _run(client, iid, "color_balance", {"cyan_red": 10, "magenta_green": -5, "yellow_blue": 15})
+    _run(client, iid, "vibrance", {"vibrance": 25, "saturation": 10})
 
 
 def test_remove_background_opencv_fallback(client):

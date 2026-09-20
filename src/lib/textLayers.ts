@@ -1,5 +1,7 @@
 export type FillType = "solid" | "gradient";
 
+import type { LayerMask } from "./layers";
+
 export type TextAlign = "left" | "center" | "right" | "justify";
 
 export type TextBlendMode =
@@ -60,6 +62,7 @@ export interface TextLayer {
   shadowBlur: number;
   visible: boolean;
   locked: boolean;
+  mask?: LayerMask;
 }
 
 export const FONT_OPTIONS: { value: string; label: string }[] = [
@@ -123,6 +126,7 @@ export function createTextLayer(partial?: Partial<TextLayer> & { x?: number; y?:
     locked: partial?.locked ?? false,
     blendMode: partial?.blendMode ?? "source-over",
     groupId: partial?.groupId ?? null,
+    ...(partial?.mask ? { mask: partial.mask } : {}),
   };
 }
 

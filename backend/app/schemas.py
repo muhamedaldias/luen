@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -52,8 +53,8 @@ class ProjectCreate(BaseModel):
 class ProjectOut(BaseModel):
     id: str
     name: str
-    created_at: str
-    updated_at: str
+    created_at: datetime | str
+    updated_at: datetime | str
 
     model_config = {"from_attributes": True}
 
@@ -66,6 +67,6 @@ class ImageOut(BaseModel):
     height: int
     size_bytes: int
     mime: str
-    created_at: str
+    created_at: datetime | str
 
     model_config = {"from_attributes": True}

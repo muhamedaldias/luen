@@ -1,4 +1,4 @@
-from . import artistic, background, blend, classical, enhance, filters
+from . import adjust_color, artistic, background, blend, classical, enhance, filters
 
 OPERATIONS = {
     "crop": classical.crop,
@@ -17,6 +17,10 @@ OPERATIONS = {
     "hue_saturation": filters.hue_saturation,
     "grayscale": filters.grayscale,
     "sepia": filters.sepia,
+    "levels": adjust_color.levels,
+    "curves": adjust_color.curves,
+    "color_balance": adjust_color.color_balance,
+    "vibrance": adjust_color.vibrance,
     "vignette": filters.vignette,
     "upscale": filters.upscale,
     "resize_canvas": classical.resize_canvas,

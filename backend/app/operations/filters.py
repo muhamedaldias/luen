@@ -114,11 +114,13 @@ def vignette(image_id: str, user_id: str, params: dict) -> str:
     strength = max(0.0, min(100.0, _float_params(params, "strength", 45)))
     bgr = _bgr_from(img).astype(np.float32)
     h, w = bgr.shape[:2]
-    kw = max(w, 3) | 1  # فردي إجباري لـ getGaussianKernel
-    kh = max(h, 3) | 1
-    kx = cv2.getGaussianKernel(kw, w / 3.0)
-    ky = cv2.getGaussianKernel(kh, h / 3.0)
-    mask = (ky @ kx.T).astype(np.float32)
+    y = np.arange(h, dtype=np.float32) - (h - 1) / 2.0
+    x = np.arange(w, dtype=np.float32) - (w - 1) / 2.0
+    sx = max(w / 3.0, 1e-6)
+    sy = max(h / 3.0, 1e-6)
+    gx = np.exp(-0.5 * (x / sx) ** 2)
+    gy = np.exp(-0.5 * (y / sy) ** 2)
+    mask = (gy[:, None] * gx[None, :]).astype(np.float32)
     mask = (mask - mask.min()) / max(mask.max() - mask.min(), 1e-6)
     k = strength / 100.0
     mask = (1.0 - k) + k * mask

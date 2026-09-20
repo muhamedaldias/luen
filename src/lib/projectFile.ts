@@ -1,5 +1,6 @@
 import type { TextLayer } from "./textLayers";
 import type { ImageLayer, ShapeLayer, SolidLayer } from "./layers";
+import { sanitizeLayerMask } from "./layers";
 import type { LayerRef } from "./layerSystem";
 import type { CanvasImage } from "./history";
 
@@ -31,6 +32,16 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function asArray<T>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
+}
+
+function cleanMasks<T extends object>(ls: T[]): T[] {
+  return ls.map((l) => {
+    const m = sanitizeLayerMask((l as { mask?: unknown }).mask);
+    if (m) return { ...l, mask: m };
+    const c = { ...l } as Record<string, unknown>;
+    delete c.mask;
+    return c as T;
+  });
 }
 
 export function parseProject(json: string): LumenProject {
@@ -65,10 +76,10 @@ export function parseProject(json: string): LumenProject {
     version: 1,
     docSize,
     image,
-    textLayers: asArray<TextLayer>(raw.textLayers),
-    imageLayers: asArray<ImageLayer>(raw.imageLayers),
-    shapeLayers: asArray<ShapeLayer>(raw.shapeLayers),
-    solidLayers: asArray<SolidLayer>(raw.solidLayers),
+    textLayers: cleanMasks(asArray<TextLayer>(raw.textLayers)),
+    imageLayers: cleanMasks(asArray<ImageLayer>(raw.imageLayers)),
+    shapeLayers: cleanMasks(asArray<ShapeLayer>(raw.shapeLayers)),
+    solidLayers: cleanMasks(asArray<SolidLayer>(raw.solidLayers)),
     order: asArray<LayerRef>(raw.order),
     groups: isRecord(raw.groups) ? (raw.groups as Record<string, string>) : {},
   };

@@ -3,7 +3,7 @@ import { Panel, Group, Separator } from "react-resizable-panels";
 import TopBar from "./components/TopBar";
 import LeftToolbar from "./components/LeftToolbar";
 import Canvas, { type FabricStageHandle } from "./components/Canvas";
-import RightPanel from "./components/RightPanel";
+import RightPanel, { type MaskAction } from "./components/RightPanel";
 import BottomBar from "./components/BottomBar";
 import AgentDock from "./components/AgentDock";
 import SettingsModal from "./components/SettingsModal";
@@ -19,7 +19,10 @@ import MaskEditor from "./components/MaskEditor";
 import NewLayerDialog, { type NewLayerChoice } from "./components/NewLayerDialog";
 import NewCanvasDialog, { type NewCanvasOpts } from "./components/NewCanvasDialog";
 import BlendDialog from "./components/BlendDialog";
-import { createImageLayer, createShapeLayer, createSolidLayer, type ImageLayer, type ShapeLayer, type SolidLayer } from "./lib/layers";
+import PresetPanel from "./components/PresetPanel";
+import { createPreset, importPresets, exportPresets } from "./lib/presets";
+import { createImageLayer, createShapeLayer, createSolidLayer, createLayerMask, bakeMaskIntoImage, type ImageLayer, type ShapeLayer, type SolidLayer, type LayerMask } from "./lib/layers";
+import { magicWandSelect, quickSelect, combineMasks, countMaskPixels, featherMask, invertMask, solidMaskDataUrl, type QuickSeed, type QuickMode } from "./lib/selection";
 import {
   BG_ID,
   syncOrder,
@@ -48,6 +51,8 @@ type ToolId =
   | "text"
   | "shape"
   | "smart-select"
+  | "magic-wand"
+  | "quick-select"
   | "eraser"
   | "eyedropper"
   | "pan"
@@ -60,6 +65,8 @@ const toolLabels: Record<ToolId, string> = {
   text: "Text",
   shape: "Shape",
   "smart-select": "Smart Select",
+  "magic-wand": "Magic Wand",
+  "quick-select": "Quick Select",
   eraser: "Eraser",
   eyedropper: "Eyedropper",
   pan: "Pan",
@@ -122,6 +129,14 @@ export default function App() {
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [selectedLayer, setSelectedLayer] = useState<{ kind: string; id: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectionMask, setSelectionMask] = useState<string | null>(null);
+  const [selectionInverted, setSelectionInverted] = useState(false);
+  const [wandTolerance, setWandTolerance] = useState(32);
+  const [wandContiguous, setWandContiguous] = useState(true);
+  const [wandBusy, setWandBusy] = useState(false);
+  const [quickBrush, setQuickBrush] = useState(40);
+  const [quickTolerance, setQuickTolerance] = useState(32);
+  const [quickBusy, setQuickBusy] = useState(false);
   const [layerOrder, setLayerOrder] = useState<LayerRef[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
   const [rightTab, setRightTab] = useState<"layers" | "design" | "adjustments" | "history">("layers");
@@ -136,6 +151,8 @@ export default function App() {
   const [shapeKind, setShapeKind] = useState<"rect" | "ellipse">("rect");
   const [showGrid, setShowGrid] = useState(false);
   const [showRulers, setShowRulers] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | null>(null);
 
   // ── Undo/Redo: لقطات Memento بحد تكيّفي حسب حجم الصورة (انظر lib/history.ts) ──
   const [history, setHistory] = useState<HistoryEntry[]>([emptyEntry("Open")]);
@@ -151,6 +168,13 @@ export default function App() {
   const orderRef = useRef<LayerRef[]>([]);
   const groupsRef = useRef<Record<string, string>>({});
   const selectedTextIdRef = useRef<string | null>(null);
+  const selectedLayerRef = useRef<{ kind: string; id: string } | null>(null);
+  const selectionMaskRef = useRef<string | null>(null);
+  const selectionInvertedRef = useRef(false);
+  const wandToleranceRef = useRef(32);
+  const wandContiguousRef = useRef(true);
+  const quickBrushRef = useRef(40);
+  const quickToleranceRef = useRef(32);
   const activeToolRef = useRef<ToolId>("select");
   const shapeKindRef = useRef<"rect" | "ellipse">("rect");
   const [canvasImage, setCanvasImage] = useState<CanvasImage | null>(null);
@@ -161,6 +185,27 @@ export default function App() {
   useEffect(() => {
     selectedTextIdRef.current = selectedTextId;
   }, [selectedTextId]);
+  useEffect(() => {
+    selectedLayerRef.current = selectedLayer;
+  }, [selectedLayer]);
+  useEffect(() => {
+    selectionMaskRef.current = selectionMask;
+  }, [selectionMask]);
+  useEffect(() => {
+    selectionInvertedRef.current = selectionInverted;
+  }, [selectionInverted]);
+  useEffect(() => {
+    wandToleranceRef.current = wandTolerance;
+  }, [wandTolerance]);
+  useEffect(() => {
+    wandContiguousRef.current = wandContiguous;
+  }, [wandContiguous]);
+  useEffect(() => {
+    quickBrushRef.current = quickBrush;
+  }, [quickBrush]);
+  useEffect(() => {
+    quickToleranceRef.current = quickTolerance;
+  }, [quickTolerance]);
   useEffect(() => {
     activeToolRef.current = activeTool;
   }, [activeTool]);
@@ -219,6 +264,8 @@ export default function App() {
     setSolidLayers(cloneLayers(entry.solidLayers ?? []));
     setLayerOrder(entry.order ? [...entry.order] : []);
     setGroupNames(entry.groups ? { ...entry.groups } : {});
+    setSelectionMask(entry.selectionMask ?? null);
+    setSelectionInverted(entry.selectionInverted === true);
     setSelectedTextId(null);
     setSelectedLayer(null);
     setSelectedIds([]);
@@ -244,9 +291,44 @@ export default function App() {
         void restoreIdx(historyIdxRef.current + 1);
         return;
       }
+      if (mod && e.shiftKey && e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        if (selectionMaskRef.current) {
+          void selectionToLayerMask();
+        } else {
+          handleMaskAdd("white");
+        }
+        return;
+      }
+      if (mod && e.shiftKey && e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        void invertPixelSelection();
+        return;
+      }
+      if (mod && e.shiftKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        clearPixelSelection(true);
+        setSelectedIds([]);
+        setSelectedTextId(null);
+        setSelectedLayer(null);
+        showNotice("Selection cleared");
+        return;
+      }
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        if (imageRef.current) setMenuDialog("levels");
+        return;
+      }
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        if (imageRef.current) setMenuDialog("curves");
+        return;
+      }
       if (mod) return;
       const k = e.key.toLowerCase();
       if (k === "v") setActiveTool("select");
+      else if (k === "w") setActiveTool("smart-select");
+      else if (k === "q") setActiveTool("quick-select");
       else if (k === "t") setActiveTool("text");
       else if (k === "b") setActiveTool("brush");
       else if (k === "e") setActiveTool("eraser");
@@ -284,7 +366,7 @@ export default function App() {
   }, []);
 
   const pushHistory = useCallback(
-    (label: string, next?: { image?: CanvasImage | null; layers?: TextLayer[]; imageLayers?: ImageLayer[]; shapeLayers?: ShapeLayer[]; solidLayers?: SolidLayer[]; order?: LayerRef[]; groups?: Record<string, string> }) => {
+    (label: string, next?: { image?: CanvasImage | null; layers?: TextLayer[]; imageLayers?: ImageLayer[]; shapeLayers?: ShapeLayer[]; solidLayers?: SolidLayer[]; order?: LayerRef[]; groups?: Record<string, string>; selectionMask?: string | null; selectionInverted?: boolean }) => {
       let strokes: object[] = [];
       try {
         const raw = stageRef.current?.getStrokes() ?? [];
@@ -314,6 +396,8 @@ export default function App() {
         strokes,
         order: freshOrder,
         groups: next?.groups ? { ...next.groups } : { ...groupsRef.current },
+        selectionMask: next && "selectionMask" in next ? (next.selectionMask ?? null) : selectionMaskRef.current,
+        selectionInverted: next && "selectionInverted" in next && typeof next.selectionInverted === "boolean" ? next.selectionInverted : selectionInvertedRef.current,
       };
       const h = historyRef.current;
       const idx = historyIdxRef.current;
@@ -991,6 +1075,346 @@ export default function App() {
     pushHistory("Paste text", { layers: next });
   }
 
+  const showNotice = useCallback((msg: string) => {
+    setNotice(msg);
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 2600);
+  }, []);
+
+  type MaskTarget = { kind: "text" | "image" | "shape" | "solid"; id: string };
+
+  const getMaskTarget = useCallback((): MaskTarget | null => {
+    const tid = selectedTextIdRef.current;
+    if (tid) return { kind: "text", id: tid };
+    const sl = selectedLayerRef.current;
+    if (sl && (sl.kind === "text" || sl.kind === "image" || sl.kind === "shape" || sl.kind === "solid")) {
+      return { kind: sl.kind as MaskTarget["kind"], id: sl.id };
+    }
+    return null;
+  }, []);
+
+  const getMaskLayer = useCallback(
+    (t: MaskTarget): { mask?: LayerMask } | null => {
+      if (t.kind === "text") return layersRef.current.find((l) => l.id === t.id) ?? null;
+      if (t.kind === "image") return imageLayersRef.current.find((l) => l.id === t.id) ?? null;
+      if (t.kind === "shape") return shapeLayersRef.current.find((l) => l.id === t.id) ?? null;
+      return solidLayersRef.current.find((l) => l.id === t.id) ?? null;
+    },
+    []
+  );
+
+  const setLayerMask = useCallback(
+    (t: MaskTarget, mask: LayerMask | undefined, label: string) => {
+      if (t.kind === "text") {
+        const next = layersRef.current.map((l) => {
+          if (l.id !== t.id) return l;
+          if (mask) return { ...l, mask };
+          const c = { ...l };
+          delete c.mask;
+          return c;
+        });
+        setTextLayers(next);
+        pushHistory(label, { layers: next });
+      } else if (t.kind === "image") {
+        const next = imageLayersRef.current.map((l) => {
+          if (l.id !== t.id) return l;
+          if (mask) return { ...l, mask };
+          const c = { ...l };
+          delete c.mask;
+          return c;
+        });
+        setImageLayers(next);
+        pushHistory(label, { imageLayers: next });
+      } else if (t.kind === "shape") {
+        const next = shapeLayersRef.current.map((l) => {
+          if (l.id !== t.id) return l;
+          if (mask) return { ...l, mask };
+          const c = { ...l };
+          delete c.mask;
+          return c;
+        });
+        setShapeLayers(next);
+        pushHistory(label, { shapeLayers: next });
+      } else {
+        const next = solidLayersRef.current.map((l) => {
+          if (l.id !== t.id) return l;
+          if (mask) return { ...l, mask };
+          const c = { ...l };
+          delete c.mask;
+          return c;
+        });
+        setSolidLayers(next);
+        pushHistory(label, { solidLayers: next });
+      }
+    },
+    [pushHistory]
+  );
+
+  const handleMaskAdd = useCallback(
+    (initial: "white" | "black") => {
+      const t = getMaskTarget();
+      if (!t) {
+        setLoadError("Select a layer first");
+        return;
+      }
+      const existing = getMaskLayer(t);
+      if (!existing) {
+        setLoadError("Select a layer first");
+        return;
+      }
+      if (existing.mask?.url) {
+        showNotice("Layer already has a mask");
+        return;
+      }
+      const m = createLayerMask(initial);
+      if (!m.url) {
+        setLoadError("Could not create mask canvas");
+        return;
+      }
+      setLayerMask(t, m, initial === "black" ? "Add mask (hide all)" : "Add mask (reveal all)");
+      showNotice(initial === "black" ? "Black mask added — layer hidden" : "White mask added — layer revealed");
+    },
+    [getMaskTarget, getMaskLayer, setLayerMask, showNotice]
+  );
+
+  const handleMaskToggle = useCallback(() => {
+    const t = getMaskTarget();
+    if (!t) {
+      setLoadError("Select a layer first");
+      return;
+    }
+    const layer = getMaskLayer(t);
+    if (!layer) {
+      setLoadError("Select a layer first");
+      return;
+    }
+    if (!layer.mask?.url) {
+      setLoadError("No mask on this layer — add one first");
+      return;
+    }
+    const next: LayerMask = { ...layer.mask, visible: layer.mask.visible === false };
+    setLayerMask(t, next, next.visible ? "Enable mask" : "Disable mask");
+    showNotice(next.visible ? "Mask enabled" : "Mask disabled");
+  }, [getMaskTarget, getMaskLayer, setLayerMask, showNotice]);
+
+  const handleMaskRemove = useCallback(() => {
+    const t = getMaskTarget();
+    if (!t) {
+      setLoadError("Select a layer first");
+      return;
+    }
+    const layer = getMaskLayer(t);
+    if (!layer) {
+      setLoadError("Select a layer first");
+      return;
+    }
+    if (!layer.mask) {
+      setLoadError("No mask on this layer");
+      return;
+    }
+    setLayerMask(t, undefined, "Remove mask");
+    showNotice("Mask removed");
+  }, [getMaskTarget, getMaskLayer, setLayerMask, showNotice]);
+
+  const handleLayerMaskApply = useCallback(async () => {
+    const t = getMaskTarget();
+    if (!t) {
+      setLoadError("Select a layer first");
+      return;
+    }
+    if (t.kind !== "image") {
+      setLoadError("Apply Mask works on image layers — other layers keep the live mask");
+      return;
+    }
+    const layer = imageLayersRef.current.find((l) => l.id === t.id);
+    if (!layer) {
+      setLoadError("Select a layer first");
+      return;
+    }
+    if (!layer.mask?.url) {
+      setLoadError("No mask on this layer — add one first");
+      return;
+    }
+    setBusy("Applying mask…");
+    try {
+      const baked = await bakeMaskIntoImage(layer.url, layer.mask);
+      const stamped = { ...layer, url: baked };
+      delete stamped.mask;
+      const next = imageLayersRef.current.map((l) => (l.id === t.id ? stamped : l));
+      setImageLayers(next);
+      pushHistory("Apply mask", { imageLayers: next });
+      showNotice("Mask applied");
+    } catch {
+      setLoadError("Could not apply mask");
+    } finally {
+      setBusy(null);
+    }
+  }, [getMaskTarget, pushHistory, showNotice]);
+
+  const handleMaskAction = useCallback(
+    (a: MaskAction) => {
+      if (a === "add-white") handleMaskAdd("white");
+      else if (a === "add-black") handleMaskAdd("black");
+      else if (a === "toggle") handleMaskToggle();
+      else if (a === "remove") handleMaskRemove();
+      else if (a === "apply") void handleLayerMaskApply();
+    },
+    [handleMaskAdd, handleMaskToggle, handleMaskRemove, handleLayerMaskApply]
+  );
+
+  /* ── Magic Wand pixel selection ── */
+
+  const commitPixelSelection = useCallback(
+    (mask: string | null, inverted: boolean, label: string) => {
+      setSelectionMask(mask);
+      setSelectionInverted(inverted);
+      selectionMaskRef.current = mask;
+      selectionInvertedRef.current = inverted;
+      pushHistory(label, { selectionMask: mask, selectionInverted: inverted });
+      if (mask) {
+        void countMaskPixels(mask).then((n) => {
+          showNotice(inverted ? `Selection inverted: ${n.toLocaleString()} pixels` : `Selection: ${n.toLocaleString()} pixels`);
+        }).catch(() => {
+          showNotice(label);
+        });
+      } else {
+        showNotice(label);
+      }
+    },
+    [pushHistory, showNotice]
+  );
+
+  const handleMagicWandPick = useCallback(
+    async (px: number, py: number, add: boolean, subtract: boolean) => {
+      const img = imageRef.current;
+      if (!img?.url) {
+        showNotice("Open an image first — then click to select");
+        return;
+      }
+      setWandBusy(true);
+      try {
+        const fresh = await magicWandSelect(img.url, px, py, wandToleranceRef.current, wandContiguousRef.current);
+        const prev = selectionMaskRef.current;
+        if (add && prev) {
+          const combined = await combineMasks(prev, fresh, "add");
+          commitPixelSelection(combined, false, "Magic Wand (add)");
+        } else if (subtract && prev) {
+          const combined = await combineMasks(prev, fresh, "subtract");
+          commitPixelSelection(combined, false, "Magic Wand (subtract)");
+        } else {
+          commitPixelSelection(fresh, false, "Magic Wand");
+        }
+      } catch {
+        showNotice("Selection failed — try clicking inside the image");
+      } finally {
+        setWandBusy(false);
+      }
+    },
+    [commitPixelSelection, showNotice]
+  );
+
+  const handleQuickSelectFinish = useCallback(
+    async (seeds: QuickSeed[], mode: QuickMode) => {
+      const img = imageRef.current;
+      if (!img?.url) {
+        showNotice("Open an image first — then paint to select");
+        return;
+      }
+      if (!seeds || seeds.length === 0) return;
+      setQuickBusy(true);
+      try {
+        const fresh = await quickSelect(img.url, seeds, quickBrushRef.current, quickToleranceRef.current, mode);
+        const prev = selectionMaskRef.current;
+        if (prev) {
+          const combined = await combineMasks(prev, fresh, mode);
+          commitPixelSelection(combined, false, mode === "add" ? "Quick Select (add)" : "Quick Select (subtract)");
+        } else if (mode === "subtract") {
+          showNotice("Nothing to subtract from — paint without Alt to add first");
+        } else {
+          commitPixelSelection(fresh, false, "Quick Select");
+        }
+      } catch {
+        showNotice("Selection failed — try painting inside the image");
+      } finally {
+        setQuickBusy(false);
+      }
+    },
+    [commitPixelSelection, showNotice]
+  );
+
+  const clearPixelSelection = useCallback(
+    (silent = false) => {
+      setSelectionMask(null);
+      setSelectionInverted(false);
+      selectionMaskRef.current = null;
+      selectionInvertedRef.current = false;
+      pushHistory("Clear selection", { selectionMask: null, selectionInverted: false });
+      if (!silent) showNotice("Selection cleared");
+    },
+    [pushHistory, showNotice]
+  );
+
+  const invertPixelSelection = useCallback(async () => {
+    const mask = selectionMaskRef.current;
+    if (!mask) {
+      showNotice("Nothing to invert — make a selection first");
+      return;
+    }
+    try {
+      const inv = await invertMask(mask);
+      commitPixelSelection(inv, false, "Invert selection");
+    } catch {
+      showNotice("Could not invert selection");
+    }
+  }, [commitPixelSelection, showNotice]);
+
+  const selectAllPixels = useCallback(() => {
+    const img = imageRef.current;
+    if (!img || img.width < 1 || img.height < 1) {
+      showNotice("Open an image first");
+      return;
+    }
+    commitPixelSelection(solidMaskDataUrl(img.width, img.height, true), false, "Select all");
+  }, [commitPixelSelection, showNotice]);
+
+  const featherPixelSelection = useCallback(
+    async (radius: number) => {
+      const mask = selectionMaskRef.current;
+      if (!mask) {
+        showNotice("Nothing to feather — make a selection first");
+        return;
+      }
+      try {
+        const soft = await featherMask(mask, radius);
+        commitPixelSelection(soft, selectionInvertedRef.current, `Feather selection (${Math.max(0, Math.round(radius))}px)`);
+      } catch {
+        showNotice("Could not feather selection");
+      }
+    },
+    [commitPixelSelection, showNotice]
+  );
+
+  const selectionToLayerMask = useCallback(async () => {
+    const mask = selectionMaskRef.current;
+    if (!mask) {
+      showNotice("Nothing selected — click with the Magic Wand or paint with Quick Select first");
+      return;
+    }
+    const t = getMaskTarget();
+    if (!t) {
+      setLoadError("Select a layer first");
+      return;
+    }
+    try {
+      const url = selectionInvertedRef.current ? await invertMask(mask) : mask;
+      const m: LayerMask = { url, visible: true, invert: false, opacity: 100 };
+      setLayerMask(t, m, "Mask from selection");
+      showNotice("Mask added to layer");
+    } catch {
+      setLoadError("Could not create mask from selection");
+    }
+  }, [getMaskTarget, setLayerMask, showNotice]);
+
   function handleMenuAction(item: string) {
     switch (item) {
       // — Image —
@@ -1021,6 +1445,26 @@ export default function App() {
       case "Image Size…":
         if (!requireImage()) return;
         setMenuDialog("image-size");
+        break;
+      // — Select (magic wand pixel selection) —
+      case "Select All":
+        selectAllPixels();
+        break;
+      case "Invert Selection":
+        void invertPixelSelection();
+        break;
+      case "Clear Selection":
+        clearPixelSelection();
+        break;
+      case "Feather Selection…":
+        if (!selectionMaskRef.current) {
+          showNotice("Nothing to feather — make a selection first");
+          return;
+        }
+        setMenuDialog("feather");
+        break;
+      case "Mask from Selection":
+        void selectionToLayerMask();
         break;
       // — Layer —
       case "New Layer":
@@ -1058,6 +1502,21 @@ export default function App() {
         break;
       case "Merge Down":
         void handleMergeDown();
+        break;
+      case "Add Mask (White)":
+        handleMaskAdd("white");
+        break;
+      case "Add Mask (Black)":
+        handleMaskAdd("black");
+        break;
+      case "Disable/Enable Mask":
+        handleMaskToggle();
+        break;
+      case "Remove Mask":
+        handleMaskRemove();
+        break;
+      case "Apply Mask":
+        void handleLayerMaskApply();
         break;
       case "Flatten Image":
         void handleFlatten();
@@ -1146,6 +1605,22 @@ export default function App() {
         if (!requireImage()) return;
         setMenuDialog("hue-saturation");
         break;
+      case "Color Balance…":
+        if (!requireImage()) return;
+        setMenuDialog("color-balance");
+        break;
+      case "Vibrance…":
+        if (!requireImage()) return;
+        setMenuDialog("vibrance");
+        break;
+      case "Levels…":
+        if (!requireImage()) return;
+        setMenuDialog("levels");
+        break;
+      case "Curves…":
+        if (!requireImage()) return;
+        setMenuDialog("curves");
+        break;
       case "Grayscale":
         if (!requireImage()) return;
         void handleApply("grayscale", {});
@@ -1181,6 +1656,38 @@ export default function App() {
         if (!requireImage()) return;
         setMenuDialog("upscale");
         break;
+      case "Save Preset": {
+        if (!requireImage()) return;
+        const name = prompt("Enter preset name", "New Preset");
+        if (name) {
+          const preset = { operation: "adjust", params: {}, name };
+          createPreset(name, "adjust", "adjust", preset.params);
+        }
+        break;
+      }
+      case "Load Presets…": {
+        if (!requireImage()) return;
+        const json = prompt("Paste preset JSON", "");
+        if (json) {
+          const result = importPresets(json);
+          if (result.count > 0) {
+            showNotice(`Imported ${result.count} preset(s)`);
+          }
+        }
+        break;
+      }
+      case "Export Presets…": {
+        if (!requireImage()) return;
+        const json = exportPresets();
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "lumen-presets.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        break;
+      }
       default:
         break;
     }
@@ -1189,6 +1696,11 @@ export default function App() {
   function handleDialogConfirm(params: Record<string, number | string>) {
     const kind = menuDialog;
     setMenuDialog(null);
+    if (kind === "feather") {
+      const r = typeof params.radius === "number" ? params.radius : Number(params.radius ?? 2);
+      void featherPixelSelection(Number.isFinite(r) ? r : 2);
+      return;
+    }
     if (!kind || !imageRef.current) return;
     const opMap: Record<DialogKind, string> = {
       "resize-canvas": "resize_canvas",
@@ -1197,8 +1709,13 @@ export default function App() {
       sharpen: "sharpen",
       "brightness-contrast": "brightness_contrast",
       "hue-saturation": "hue_saturation",
+      "color-balance": "color_balance",
+      vibrance: "vibrance",
       vignette: "vignette",
       upscale: "upscale",
+      levels: "levels",
+      curves: "curves",
+      feather: "feather",
     };
     void handleApply(opMap[kind], params);
   }
@@ -1491,6 +2008,26 @@ export default function App() {
     [pushHistory]
   );
 
+  const maskPanelTarget: { kind: "text" | "image" | "shape" | "solid"; id: string } | null = selectedTextId
+    ? { kind: "text", id: selectedTextId }
+    : selectedLayer && (selectedLayer.kind === "text" || selectedLayer.kind === "image" || selectedLayer.kind === "shape" || selectedLayer.kind === "solid")
+      ? { kind: selectedLayer.kind as "text" | "image" | "shape" | "solid", id: selectedLayer.id }
+      : null;
+
+  const maskPanelLayer: { mask?: LayerMask } | null = !maskPanelTarget
+    ? null
+    : maskPanelTarget.kind === "text"
+      ? (textLayers.find((l) => l.id === maskPanelTarget.id) ?? null)
+      : maskPanelTarget.kind === "image"
+        ? (imageLayers.find((l) => l.id === maskPanelTarget.id) ?? null)
+        : maskPanelTarget.kind === "shape"
+          ? (shapeLayers.find((l) => l.id === maskPanelTarget.id) ?? null)
+          : (solidLayers.find((l) => l.id === maskPanelTarget.id) ?? null);
+
+  const maskPanelState: { hasMask: boolean; enabled: boolean } | null = !maskPanelTarget || !maskPanelLayer
+    ? null
+    : { hasMask: !!maskPanelLayer.mask, enabled: maskPanelLayer.mask ? maskPanelLayer.mask.visible !== false : false };
+
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: "var(--background)" }}>
       <TopBar
@@ -1552,8 +2089,54 @@ export default function App() {
           </div>
         )}
 
+        {activeTool === "quick-select" && (
+          <div
+            style={{
+              position: "absolute",
+              left: 64,
+              bottom: 48,
+              zIndex: 50,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              padding: "10px 14px",
+              borderRadius: 8,
+              minWidth: 220,
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            }}
+          >
+            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>
+              Brush size: {quickBrush}px
+              <input
+                type="range"
+                min={1}
+                max={200}
+                value={quickBrush}
+                onChange={(e) => setQuickBrush(Number(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--accent)" }}
+              />
+            </label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>
+              Tolerance: {quickTolerance}
+              <input
+                type="range"
+                min={0}
+                max={255}
+                value={quickTolerance}
+                onChange={(e) => setQuickTolerance(Number(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--accent)" }}
+              />
+            </label>
+            <div style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
+              {quickBusy ? "Growing selection…" : "Drag to add · Hold Alt to subtract (Q)"}
+            </div>
+          </div>
+        )}
+
         <Group orientation="horizontal" className="flex-1 min-w-0 min-h-0">
-          <Panel defaultSize={rightCollapsed ? 100 : 66} minSize={20} style={{ minWidth: 0, overflow: "hidden" }}>
+          <Panel style={{ minWidth: 0, overflow: "hidden" }}>
             <Canvas
               ref={stageRef}
               hasImage={canvasImage !== null}
@@ -1584,6 +2167,11 @@ export default function App() {
               onDeleteText={handleDeleteText}
               onCommitHistory={pushHistory}
               onSmartSelect={() => void handleRemoveBackground()}
+              selectionMask={selectionMask}
+              selectionInverted={selectionInverted}
+              onMagicWandSelect={(px, py, add, subtract) => void handleMagicWandPick(px, py, add, subtract)}
+              onQuickSelect={(seeds, mode) => void handleQuickSelectFinish(seeds, mode)}
+              quickBrush={quickBrush}
               shapeKind={shapeKind}
               onShapeDraw={handleShapeDraw}
               showGrid={showGrid}
@@ -1637,7 +2225,7 @@ export default function App() {
                 />
               </Separator>
 
-              <Panel defaultSize={34} minSize={26} maxSize={60} style={{ minWidth: 272, overflow: "hidden" }}>
+              <Panel defaultSize="26" minSize="272px" maxSize="60" style={{ minWidth: 272, overflow: "hidden" }}>
                 <RightPanel
                   imageId={canvasImage?.imageId}
                   hasImage={canvasImage !== null}
@@ -1690,19 +2278,23 @@ export default function App() {
                   onOpenImage={handleOpen}
                   onNewCanvas={() => setNewCanvasOpen(true)}
                   onShapeTool={() => setActiveTool("shape")}
+                  onMaskAction={maskPanelTarget ? handleMaskAction : undefined}
+                  maskState={maskPanelState}
+                  onCollapse={() => setRightCollapsed(true)}
                 />
               </Panel>
             </>
           )}
         </Group>
 
-        <button
-          onClick={() => setRightCollapsed((v) => !v)}
-          title={rightCollapsed ? "إظهار اللوحة الجانبية" : "إخفاء اللوحة الجانبية"}
+        {rightCollapsed && (
+          <button
+            onClick={() => setRightCollapsed((v) => !v)}
+            title="Show side panel"
           style={{
             position: "absolute",
             top: 10,
-            right: rightCollapsed ? 40 : 12,
+            right: 40,
             zIndex: 45,
             display: "flex",
             alignItems: "center",
@@ -1712,28 +2304,20 @@ export default function App() {
             borderRadius: 999,
             cursor: "pointer",
             border: "1px solid rgba(201,123,74,0.35)",
-            background: rightCollapsed
-              ? "linear-gradient(135deg, #C97B4A 0%, #B86A3A 100%)"
-              : "rgba(28,27,26,0.92)",
-            color: rightCollapsed ? "#fff" : "var(--foreground)",
-            boxShadow: rightCollapsed
-              ? "0 4px 20px rgba(201,123,74,0.45), 0 1px 0 rgba(255,255,255,0.15) inset"
-              : "0 2px 12px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.06) inset",
+            background: "linear-gradient(135deg, #C97B4A 0%, #B86A3A 100%)",
+            color: "#fff",
+            boxShadow: "0 4px 20px rgba(201,123,74,0.45), 0 1px 0 rgba(255,255,255,0.15) inset",
             backdropFilter: "blur(12px)",
             transition: "all 260ms cubic-bezier(0.34,1.56,0.64,1)",
-            transform: rightCollapsed ? "scale(1.03)" : "scale(1)",
+            transform: "scale(1.03)",
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = "scale(1.06)";
-            e.currentTarget.style.boxShadow = rightCollapsed
-              ? "0 6px 28px rgba(201,123,74,0.6), 0 1px 0 rgba(255,255,255,0.2) inset"
-              : "0 4px 16px rgba(0,0,0,0.5)";
+            e.currentTarget.style.boxShadow = "0 6px 28px rgba(201,123,74,0.6), 0 1px 0 rgba(255,255,255,0.2) inset";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.transform = rightCollapsed ? "scale(1.03)" : "scale(1)";
-            e.currentTarget.style.boxShadow = rightCollapsed
-              ? "0 4px 20px rgba(201,123,74,0.45), 0 1px 0 rgba(255,255,255,0.15) inset"
-              : "0 2px 12px rgba(0,0,0,0.4)";
+            e.currentTarget.style.transform = "scale(1.03)";
+            e.currentTarget.style.boxShadow = "0 4px 20px rgba(201,123,74,0.45), 0 1px 0 rgba(255,255,255,0.15) inset";
           }}
         >
           <span
@@ -1741,7 +2325,7 @@ export default function App() {
               width: 20,
               height: 20,
               borderRadius: "50%",
-              background: rightCollapsed ? "rgba(255,255,255,0.22)" : "var(--accent)",
+              background: "rgba(255,255,255,0.22)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -1749,30 +2333,29 @@ export default function App() {
               flexShrink: 0,
             }}
           >
-            {rightCollapsed ? "◀" : "▶"}
+            ◀
           </span>
           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
-            {rightCollapsed ? "اللوحة" : "إخفاء"}
+            Panel
           </span>
-          {rightCollapsed && (
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "#fff",
-                boxShadow: "0 0 8px rgba(255,255,255,0.9)",
-                animation: "pulseDot 1.6s ease-in-out infinite",
-                flexShrink: 0,
-              }}
-            />
-          )}
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "#fff",
+              boxShadow: "0 0 8px rgba(255,255,255,0.9)",
+              animation: "pulseDot 1.6s ease-in-out infinite",
+              flexShrink: 0,
+            }}
+          />
         </button>
+        )}
 
         {rightCollapsed && (
           <div
             onClick={() => setRightCollapsed(false)}
-            title="اضغط لإظهار اللوحة"
+            title="Click to show the panel"
             style={{
               position: "absolute",
               top: 0,
@@ -1861,6 +2444,29 @@ export default function App() {
             await handleBlendConfirm(p);
           }}
         />
+      )}
+
+      {notice && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 48,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 100,
+            background: "var(--card)",
+            border: "1px solid var(--accent)",
+            borderRadius: 8,
+            padding: "8px 16px",
+            fontSize: 12,
+            fontWeight: 500,
+            color: "var(--foreground)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            pointerEvents: "none",
+          }}
+        >
+          {notice}
+        </div>
       )}
     </div>
   );

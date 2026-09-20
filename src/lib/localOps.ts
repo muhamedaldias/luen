@@ -755,6 +755,197 @@ export interface LocalResult {
   height: number;
 }
 
+function clamp100(v: unknown): number {
+  return Math.max(-100, Math.min(100, num(v, 0)));
+}
+
+function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const d = mx - mn;
+  let h = 0;
+  if (d > 0) {
+    if (mx === r) h = 60 * (((g - b) / d) % 6);
+    else if (mx === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  if (h < 0) h += 360;
+  return [h, mx === 0 ? 0 : d / mx, mx];
+}
+
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let rp = 0;
+  let gp = 0;
+  let bp = 0;
+  if (h < 60) { rp = c; gp = x; }
+  else if (h < 120) { rp = x; gp = c; }
+  else if (h < 180) { gp = c; bp = x; }
+  else if (h < 240) { gp = x; bp = c; }
+  else if (h < 300) { rp = x; bp = c; }
+  else { rp = c; bp = x; }
+  return [clamp255((rp + m) * 255), clamp255((gp + m) * 255), clamp255((bp + m) * 255)];
+}
+
+function colorBalanceLocal(src: HTMLCanvasElement, params: Record<string, number | string>): HTMLCanvasElement {
+  const ranges = ["shadows", "midtones", "highlights"] as const;
+  const cfg = ranges.map((p) => ({
+    cr: clamp100(params[`${p}_cyan_red`]),
+    mg: clamp100(params[`${p}_magenta_green`]),
+    yb: clamp100(params[`${p}_yellow_blue`]),
+  }));
+  if (cfg.every((c) => c.cr === 0 && c.mg === 0 && c.yb === 0)) return src;
+  return pixelLoop(src, (r, g, b) => {
+    const lum = (r + g + b) / 3 / 255;
+    const masks = [(1 - lum) ** 2, 4 * lum * (1 - lum), lum ** 2];
+    let dr = 0;
+    let dg = 0;
+    let db = 0;
+    for (let k = 0; k < 3; k++) {
+      const m = masks[k];
+      if (m <= 0) continue;
+      const da = ((cfg[k].cr + cfg[k].mg) / 100) * m * 25;
+      const dyb = (cfg[k].yb / 100) * m * 25;
+      dr += da / 2 + dyb / 4;
+      dg += -da / 2 + dyb / 4;
+      db += -dyb / 2;
+    }
+    return [clamp255(r + dr), clamp255(g + dg), clamp255(b + db)];
+  });
+}
+
+function vibranceLocal(src: HTMLCanvasElement, params: Record<string, number | string>): HTMLCanvasElement {
+  const amount = clamp100(params.amount);
+  if (amount === 0) return src;
+  return pixelLoop(src, (r, g, b) => {
+    const [h, s, v] = rgbToHsv(r, g, b);
+    let boost = (1 - s) * (amount / 100) * 0.5;
+    const skin = (h < 60 || h > 330) && s < 0.6 && v > 0.2;
+    if (skin) boost *= 0.25;
+    const ns = Math.max(0, Math.min(1, s + boost));
+    return hsvToRgb(h, ns, v);
+  });
+}
+
+function channelMask(channel: unknown): [boolean, boolean, boolean] {
+  const c = String(channel ?? "rgb").toLowerCase();
+  if (c === "r") return [true, false, false];
+  if (c === "g") return [false, true, false];
+  if (c === "b") return [false, false, true];
+  return [true, true, true];
+}
+
+function levelsLUT(shadows: number, gamma: number, highlights: number, outMin: number, outMax: number): Uint8Array {
+  const lut = new Uint8Array(256);
+  const span = Math.max(1, highlights - shadows);
+  for (let i = 0; i < 256; i++) {
+    let v = ((i - shadows) / span) * 255;
+    v = Math.max(0, Math.min(255, v));
+    v = 255 * Math.pow(v / 255, gamma);
+    v = outMin + (v / 255) * (outMax - outMin);
+    lut[i] = Math.max(0, Math.min(255, Math.round(v)));
+  }
+  return lut;
+}
+
+function levelsLocal(src: HTMLCanvasElement, params: Record<string, number | string>): HTMLCanvasElement {
+  const shadows = Math.max(0, Math.min(255, Math.round(num(params.shadows, 0))));
+  let highlights = Math.max(0, Math.min(255, Math.round(num(params.highlights, 255))));
+  const gamma = Math.max(0.1, Math.min(10, num(params.gamma ?? params.midtones, 1)));
+  const outMin = Math.max(0, Math.min(255, Math.round(num(params.output_min, 0))));
+  const outMax = Math.max(0, Math.min(255, Math.round(num(params.output_max, 255))));
+  if (highlights <= shadows) highlights = Math.min(255, shadows + 1);
+  const lut = levelsLUT(shadows, gamma, highlights, outMin, outMax);
+  const [useR, useG, useB] = channelMask(params.channel);
+  return pixelLoop(src, (r, g, b) => [useR ? lut[r] : r, useG ? lut[g] : g, useB ? lut[b] : b]);
+}
+
+interface CurvePt {
+  x: number;
+  y: number;
+}
+
+function parseCurvePoints(raw: unknown): CurvePt[] {
+  let arr: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      throw new Error("invalid curve points");
+    }
+  }
+  if (!Array.isArray(arr) || arr.length < 2) throw new Error("curves needs at least 2 points");
+  const pts: CurvePt[] = (arr as Array<{ x?: unknown; y?: unknown }>)
+    .map((p) => ({
+      x: Math.max(0, Math.min(255, Number(p?.x ?? 0))),
+      y: Math.max(0, Math.min(255, Number(p?.y ?? 0))),
+    }))
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+    .sort((a, b) => a.x - b.x);
+  const dedup: CurvePt[] = [];
+  for (const p of pts) {
+    if (dedup.length && Math.abs(dedup[dedup.length - 1].x - p.x) < 1e-6) dedup[dedup.length - 1] = p;
+    else dedup.push(p);
+  }
+  if (dedup.length < 2) throw new Error("curves needs at least 2 distinct points");
+  return dedup;
+}
+
+function splineLUT(pts: CurvePt[]): Uint8Array {
+  const n = pts.length;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const lut = new Uint8Array(256);
+  if (n === 2) {
+    for (let i = 0; i < 256; i++) {
+      const t = (i - xs[0]) / Math.max(1e-9, xs[1] - xs[0]);
+      lut[i] = Math.max(0, Math.min(255, Math.round(ys[0] + t * (ys[1] - ys[0]))));
+    }
+    return lut;
+  }
+  const h = xs.slice(1).map((x, i) => x - xs[i]);
+  const m = new Array(n).fill(0);
+  const alpha = new Array(n).fill(0);
+  for (let i = 1; i < n - 1; i++) {
+    alpha[i] = (3 / h[i]) * (ys[i + 1] - ys[i]) - (3 / h[i - 1]) * (ys[i] - ys[i - 1]);
+  }
+  const l = new Array(n).fill(1);
+  const mu = new Array(n).fill(0);
+  const z = new Array(n).fill(0);
+  for (let i = 1; i < n - 1; i++) {
+    l[i] = 2 * (xs[i + 1] - xs[i - 1]) - h[i - 1] * mu[i - 1];
+    mu[i] = h[i] / Math.max(1e-12, l[i]);
+    z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / Math.max(1e-12, l[i]);
+  }
+  const c = new Array(n).fill(0);
+  const b = new Array(n).fill(0);
+  const dd = new Array(n).fill(0);
+  for (let j = n - 2; j >= 0; j--) {
+    c[j] = z[j] - mu[j] * c[j + 1];
+    b[j] = (ys[j + 1] - ys[j]) / h[j] - (h[j] * (c[j + 1] + 2 * c[j])) / 3;
+    dd[j] = (c[j + 1] - c[j]) / (3 * h[j]);
+  }
+  for (let i = 0; i < 256; i++) {
+    let k = n - 2;
+    for (let j = 0; j < n - 1; j++) {
+      if (i >= xs[j] && i <= xs[j + 1]) { k = j; break; }
+    }
+    const dx = i - xs[k];
+    const y = ys[k] + b[k] * dx + c[k] * dx * dx + dd[k] * dx * dx * dx;
+    lut[i] = Math.max(0, Math.min(255, Math.round(y)));
+  }
+  return lut;
+}
+
+function curvesLocal(src: HTMLCanvasElement, params: Record<string, number | string>): HTMLCanvasElement {
+  const lut = splineLUT(parseCurvePoints(params.points));
+  const [useR, useG, useB] = channelMask(params.channel);
+  return pixelLoop(src, (r, g, b) => [useR ? lut[r] : r, useG ? lut[g] : g, useB ? lut[b] : b]);
+}
+
 /** تنفيذ عملية واحدة محلياً — يرمي Error عند الفشل. */
 export async function applyLocalOp(
   imageUrl: string,
@@ -785,6 +976,18 @@ export async function applyLocalOp(
       out = drawFiltered(img, `hue-rotate(${h}deg) saturate(${(1 + s / 100).toFixed(3)})`);
       break;
     }
+    case "color_balance":
+      out = colorBalanceLocal(base, params);
+      break;
+    case "vibrance":
+      out = vibranceLocal(base, params);
+      break;
+    case "levels":
+      out = levelsLocal(base, params);
+      break;
+    case "curves":
+      out = curvesLocal(base, params);
+      break;
     case "adjust": {
       const b = Math.max(-100, Math.min(100, num(params.brightness, 0)));
       const ct = Math.max(-100, Math.min(100, num(params.contrast, 0)));

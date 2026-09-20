@@ -50,32 +50,32 @@ export default function NewLayerDialog({ onClose, onPick }: Props) {
       >
         <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>New Layer</h3>
         <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.6 }}>
-          اختر نوع الطبقة. كل الأنواع تدعم الإظهار/الإخفاء، الشفافية، التحريك، والحذف — وتُدمج كلها عند الحفظ.
+          Pick a layer type. All types support show/hide, opacity, move, and delete — everything flattens on save.
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <button style={card} onClick={() => onPick({ kind: "text" })}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-              <Type size={15} /> طبقة نص <span style={{ fontSize: 10, color: "var(--muted-foreground)" }}>Text</span>
+              <Type size={15} /> Text layer
             </span>
-            <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>عنوان/فقرة بخطوط وألوان وتدرجات وظلال — تُحرَّر من تبويب Design.</span>
+            <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>Headline/paragraph with fonts, colors, gradients, and shadows — edited in the Design tab.</span>
           </button>
           <button style={card} onClick={() => fileRef.current?.click()}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-              <ImageIcon size={15} /> طبقة صورة <span style={{ fontSize: 10, color: "var(--muted-foreground)" }}>Image overlay</span>
+              <ImageIcon size={15} /> Image layer
             </span>
-            <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>تركيب صورة ثانية فوق الحالية (لوغو/عنصر/دمج) مع تحجيم وشفافية.</span>
+            <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>Composite a second image on top (logo/element/blend) with scaling and transparency.</span>
           </button>
           <div style={{ ...card, cursor: "default" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-              <Square size={15} /> طبقة شكل <span style={{ fontSize: 10, color: "var(--muted-foreground)" }}>Shape</span>
+              <Square size={15} /> Shape layer
             </span>
             <div style={{ display: "flex", gap: 6, width: "100%" }}>
               {(
                 [
-                  { k: "rect", icon: <Square size={13} />, label: "مستطيل" },
-                  { k: "ellipse", icon: <Circle size={13} />, label: "دائرة" },
-                  { k: "line", icon: <Minus size={13} />, label: "خط" },
-                  { k: "arrow", icon: <ArrowRight size={13} />, label: "سهم" },
+                  { k: "rect", icon: <Square size={13} />, label: "Rectangle" },
+                  { k: "ellipse", icon: <Circle size={13} />, label: "Ellipse" },
+                  { k: "line", icon: <Minus size={13} />, label: "Line" },
+                  { k: "arrow", icon: <ArrowRight size={13} />, label: "Arrow" },
                 ] as const
               ).map((s) => (
                 <button
@@ -90,7 +90,7 @@ export default function NewLayerDialog({ onClose, onPick }: Props) {
           </div>
           <div style={{ ...card, cursor: "default" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-              <Droplet size={15} /> تعبئة لونية <span style={{ fontSize: 10, color: "var(--muted-foreground)" }}>Solid fill</span>
+              <Droplet size={15} /> Solid fill
             </span>
             <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
               <input type="color" value={solidColor} onChange={(e) => setSolidColor(e.target.value)} style={{ width: 40, height: 28, padding: 0, background: "transparent", border: "1px solid var(--border)", borderRadius: 6, cursor: "pointer" }} />
@@ -99,13 +99,13 @@ export default function NewLayerDialog({ onClose, onPick }: Props) {
                 onClick={() => onPick({ kind: "solid", color: solidColor })}
                 style={{ flex: 1, height: 30, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", background: "var(--primary)", color: "var(--primary-foreground)", border: "none" }}
               >
-                إضافة التعبئة
+                Add fill
               </button>
             </div>
           </div>
         </div>
         <button onClick={onClose} style={{ marginTop: 12, width: "100%", height: 32, borderRadius: 6, fontSize: 12, cursor: "pointer", background: "transparent", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}>
-          إلغاء
+          Cancel
         </button>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
       </div>

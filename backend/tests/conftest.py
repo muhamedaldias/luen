@@ -12,11 +12,22 @@ import pytest  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def inline_pool(monkeypatch):
+    from concurrent.futures import Future
+
     async def fake_run(fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
+    def fake_submit(fn, *args, **kwargs):
+        fut = Future()
+        try:
+            res = fn(*args, **kwargs)
+            fut.set_result(res)
+        except Exception as e:
+            fut.set_exception(e)
+        return fut
+
     monkeypatch.setattr("app.process_pool.run_in_pool", fake_run)
-    monkeypatch.setattr("app.process_pool.submit", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.process_pool.submit", fake_submit)
 
 
 @pytest.fixture()

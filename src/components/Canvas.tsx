@@ -3,7 +3,7 @@ import { Upload, Plus, ZoomIn, ZoomOut, Maximize2, Type, Square, ImagePlus, Pale
 import { Canvas as FabricCanvas, Textbox, Rect, Ellipse, Line, Image as FabricImage, PencilBrush, util, type FabricObject } from "fabric";
 import { ACCENT, boxRectProps, layerToStage, normAngle, textboxProps, type StageBox } from "../lib/fabricText";
 import type { TextLayer } from "../lib/textLayers";
-import type { ImageLayer, ShapeLayer, SolidLayer } from "../lib/layers";
+import type { ImageLayer, LayerMask, ShapeLayer, SolidLayer } from "../lib/layers";
 
 interface CanvasProps {
   hasImage?: boolean;
@@ -24,6 +24,11 @@ interface CanvasProps {
   onDeleteText?: (id: string) => void;
   onCommitHistory?: (label: string) => void;
   onSmartSelect?: () => void;
+  selectionMask?: string | null;
+  selectionInverted?: boolean;
+  onMagicWandSelect?: (px: number, py: number, add: boolean, subtract: boolean) => void;
+  onQuickSelect?: (seeds: Array<{ x: number; y: number }>, mode: "add" | "subtract") => void;
+  quickBrush?: number;
   imageLayers?: ImageLayer[];
   shapeLayers?: ShapeLayer[];
   solidLayers?: SolidLayer[];
@@ -60,6 +65,8 @@ const TOOL_CURSORS: Record<string, string> = {
   text: "text",
   shape: "crosshair",
   "smart-select": "crosshair",
+  "magic-wand": "crosshair",
+  "quick-select": "crosshair",
   eraser: "cell",
   eyedropper: "copy",
   pan: "grab",
@@ -240,8 +247,13 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     onAddText,
     onUpdateText,
     onDeleteText,
-    onCommitHistory,
-    onSmartSelect,
+  onCommitHistory,
+  onSmartSelect,
+  selectionMask = null,
+  selectionInverted = false,
+  onMagicWandSelect,
+  onQuickSelect,
+  quickBrush = 40,
     imageLayers = [],
     shapeLayers = [],
     solidLayers = [],
@@ -269,6 +281,9 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   const elRef = useRef<HTMLCanvasElement>(null);
   const fRef = useRef<FabricCanvas | null>(null);
   const bgRef = useRef<FabricImage | null>(null);
+  const selMaskRef = useRef<FabricImage | null>(null);
+  const selAntsRef = useRef<Rect | null>(null);
+  const antsTimer = useRef<number | null>(null);
   const viewRef = useRef<{ box: StageBox; natW: number; natH: number }>({
     box: { x: 0, y: 0, w: 100, h: 100 },
     natW: 0,
@@ -279,6 +294,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   const imgLayerMap = useRef(new Map<string, FabricImage>());
   const shapeMap = useRef(new Map<string, FabricObject>());
   const solidMap = useRef(new Map<string, Rect>());
+  const maskElCache = useRef(new Map<string, HTMLImageElement>());
   const knownIds = useRef(new Set<string>());
   const transformSkip = useRef(new Set<string>());
   const editingSkip = useRef(new Set<string>());
@@ -299,8 +315,11 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   toolRef.current = activeTool;
   zoomRef.current = zoom;
 
-  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction });
-  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction };
+  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect });
+  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect };
+  const quickBrushRef = useRef(quickBrush);
+  quickBrushRef.current = quickBrush;
+  const quickDrag = useRef<{ active: boolean; seeds: Array<{ x: number; y: number }>; subtract: boolean }>({ active: false, seeds: [], subtract: false });
   const shapeKindRef = useRef(shapeKind);
   shapeKindRef.current = shapeKind;
   const layersRef = useRef(textLayers);
@@ -319,6 +338,76 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   function showToast(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2200);
+  }
+
+  function getMaskEl(url: string): Promise<HTMLImageElement | null> {
+    const hit = maskElCache.current.get(url);
+    if (hit) return Promise.resolve(hit);
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        maskElCache.current.set(url, img);
+        resolve(img);
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  }
+
+  function refreshObjMask(obj: FabricObject, mask: LayerMask | undefined) {
+    try {
+      const rec = obj as unknown as Record<string, unknown>;
+      const key =
+        mask && typeof mask.url === "string" && mask.url && mask.visible !== false
+          ? `${mask.url}|${mask.invert === true ? 1 : 0}|${typeof mask.opacity === "number" ? mask.opacity : 100}`
+          : "";
+      if (rec.maskKey === key) return;
+      rec.maskKey = key;
+      obj.clipPath = undefined;
+      if (!key || !mask || !mask.url) {
+        fRef.current?.requestRenderAll();
+        return;
+      }
+      const url = mask.url;
+      const invert = mask.invert === true;
+      const mop = Math.max(0, Math.min(1, (typeof mask.opacity === "number" ? mask.opacity : 100) / 100));
+      let r: { left: number; top: number; width: number; height: number };
+      try {
+        r = obj.getBoundingRect();
+      } catch {
+        return;
+      }
+      if (!r || r.width < 1 || r.height < 1) return;
+      const rect = { left: r.left, top: r.top, width: r.width, height: r.height };
+      void getMaskEl(url).then((el) => {
+        try {
+          const fc = fRef.current;
+          if (!fc || !el) return;
+          if ((obj as unknown as Record<string, unknown>).maskKey !== key) return;
+          if (!(fc.getObjects() as unknown[]).includes(obj as unknown)) return;
+          const nw = el.naturalWidth || el.width || 1;
+          const nh = el.naturalHeight || el.height || 1;
+          const clip = new FabricImage(el);
+          clip.set({
+            absolutePositioned: true,
+            originX: "left",
+            originY: "top",
+            left: rect.left,
+            top: rect.top,
+            scaleX: Math.max(0.001, rect.width / nw),
+            scaleY: Math.max(0.001, rect.height / nh),
+            opacity: mop,
+          } as never);
+          clip.inverted = invert;
+          obj.clipPath = clip;
+          fc.requestRenderAll();
+        } catch {
+          /* preview only — export stays exact */
+        }
+      });
+    } catch {
+      /* never break layer sync */
+    }
   }
 
   /* ---------- إحداثيات ---------- */
@@ -373,6 +462,14 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     if (bgRef.current && v.natW > 0) {
       bgRef.current.set({ left: v.box.x, top: v.box.y, scaleX: v.box.w / v.natW, scaleY: v.box.h / v.natH });
       bgRef.current.setCoords();
+    }
+    if (selMaskRef.current && v.natW > 0) {
+      selMaskRef.current.set({ left: v.box.x, top: v.box.y, scaleX: v.box.w / v.natW, scaleY: v.box.h / v.natH });
+      selMaskRef.current.setCoords();
+    }
+    if (selAntsRef.current) {
+      selAntsRef.current.set({ left: v.box.x, top: v.box.y, width: Math.max(1, v.box.w), height: Math.max(1, v.box.h) });
+      selAntsRef.current.setCoords();
     }
     syncTexts();
     try {
@@ -469,6 +566,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           globalCompositeOperation: (l as { blendMode?: string }).blendMode || "source-over",
         });
       } catch { /* تجاهل */ }
+      refreshObjMask(tb, l.mask);
       // مستطيل الصندوق الخلفي
       refreshRect(l.id, tb);
     }
@@ -536,6 +634,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         try {
           rc.set({ left: box.x, top: box.y, width: Math.max(1, box.w), height: Math.max(1, box.h), fill: s.color, opacity: Math.max(0, Math.min(1, s.opacity / 100)), visible: s.visible !== false, globalCompositeOperation: (s as { blendMode?: string }).blendMode || "source-over" } as never);
           rc.setCoords();
+          refreshObjMask(rc, s.mask);
         } catch { /* تجاهل */ }
       }
       for (const id of Array.from(solidMap.current.keys())) {
@@ -600,6 +699,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             obj.set({ x1: pts[0], y1: pts[1], x2: pts[2], y2: pts[3], stroke: s.strokeWidth > 0 ? s.strokeColor : s.color, strokeWidth: Math.max(2, s.strokeWidth || 4) } as never);
           }
           obj.setCoords();
+          refreshObjMask(obj, s.mask);
         } catch { /* تجاهل */ }
       }
       for (const id of Array.from(shapeMap.current.keys())) {
@@ -629,6 +729,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             const ih = existing.height || 1;
             existing.set({ left, top, scaleX: wpx / iw, scaleY: hpx / ih, angle: l.rotation || 0, opacity: Math.max(0, Math.min(1, l.opacity / 100)), visible: l.visible !== false, selectable: !l.locked, evented: !l.locked, globalCompositeOperation: (l as { blendMode?: string }).blendMode || "source-over" } as never);
             existing.setCoords();
+            refreshObjMask(existing, l.mask);
           } catch { /* تجاهل */ }
           continue;
         }
@@ -647,6 +748,10 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             (img as unknown as Record<string, unknown>).layerKind = "image";
             (img as unknown as Record<string, unknown>).layerId = l.id;
             imgLayerMap.current.set(l.id, img);
+            try {
+              img.setCoords();
+              refreshObjMask(img, cur?.mask ?? l.mask);
+            } catch { /* تجاهل */ }
             fc2.add(img);
             // ترتيب: خلفية ثم تعبئات ثم صور ثم أشكال ثم نصوص
             try {
@@ -756,6 +861,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     };
     tbMap.current.forEach((tb) => hide(tb as unknown as { visible: boolean }));
     rectMap.current.forEach((rc) => hide(rc as unknown as { visible: boolean }));
+    if (selMaskRef.current) hide(selMaskRef.current as unknown as { visible: boolean });
+    if (selAntsRef.current) hide(selAntsRef.current as unknown as { visible: boolean });
     imgLayerMap.current.forEach((o) => hide(o as unknown as { visible: boolean }));
     shapeMap.current.forEach((o) => hide(o as unknown as { visible: boolean }));
     solidMap.current.forEach((o) => hide(o as unknown as { visible: boolean }));
@@ -989,6 +1096,56 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         pickColor(e.clientX, e.clientY);
         return;
       }
+      if (tool === "magic-wand") {
+        if (!hasImageRef.current || !bgRef.current) {
+          showToast("Open an image first — then click to select");
+          return;
+        }
+        const p = toStage(e.clientX, e.clientY);
+        const box = viewRef.current.box;
+        const natW = viewRef.current.natW;
+        const natH = viewRef.current.natH;
+        if (natW < 2 || natH < 2) {
+          showToast("Open an image first — then click to select");
+          return;
+        }
+        const fx = (p.x - box.x) / Math.max(1, box.w);
+        const fy = (p.y - box.y) / Math.max(1, box.h);
+        if (fx < 0 || fx > 1 || fy < 0 || fy > 1) {
+          showToast("Click inside the image");
+          return;
+        }
+        const me = e as PointerEvent & { shiftKey?: boolean; altKey?: boolean };
+        handlersRef.current.onMagicWandSelect?.(fx * natW, fy * natH, me.shiftKey === true, me.altKey === true);
+        return;
+      }
+      if (tool === "quick-select") {
+        if (!hasImageRef.current || !bgRef.current) {
+          showToast("Open an image first — then paint to select");
+          return;
+        }
+        const p = toStage(e.clientX, e.clientY);
+        const box = viewRef.current.box;
+        const natW = viewRef.current.natW;
+        const natH = viewRef.current.natH;
+        if (natW < 2 || natH < 2) {
+          showToast("Open an image first — then paint to select");
+          return;
+        }
+        const fx = (p.x - box.x) / Math.max(1, box.w);
+        const fy = (p.y - box.y) / Math.max(1, box.h);
+        if (fx < 0 || fx > 1 || fy < 0 || fy > 1) {
+          showToast("Paint inside the image");
+          return;
+        }
+        const me = e as PointerEvent & { altKey?: boolean };
+        quickDrag.current = {
+          active: true,
+          seeds: [{ x: fx * natW, y: fy * natH }],
+          subtract: me.altKey === true,
+        };
+        return;
+      }
       if (tool === "smart-select") {
         if (hasImageRef.current) {
           showToast("Removing background…");
@@ -1122,11 +1279,46 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       if (erasing.current.active && toolRef.current === "eraser") {
         if (eraseAt(e.clientX, e.clientY)) erasing.current.dirty = true;
       }
+      if (quickDrag.current.active && toolRef.current === "quick-select") {
+        const q = quickDrag.current;
+        const me = e as PointerEvent & { altKey?: boolean };
+        if (me.altKey === true) q.subtract = true;
+        else if (me.altKey === false) q.subtract = false;
+        const p = toStage(e.clientX, e.clientY);
+        const box = viewRef.current.box;
+        const natW = viewRef.current.natW;
+        const natH = viewRef.current.natH;
+        if (natW > 1 && natH > 1) {
+          const fx = (p.x - box.x) / Math.max(1, box.w);
+          const fy = (p.y - box.y) / Math.max(1, box.h);
+          if (fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1) {
+            const nx = fx * natW;
+            const ny = fy * natH;
+            const last = q.seeds[q.seeds.length - 1];
+            if (last) {
+              const dist = Math.hypot(nx - last.x, ny - last.y);
+              const stepPx = Math.max(2, quickBrushRef.current / 4);
+              const n = Math.min(64, Math.max(1, Math.floor(dist / stepPx)));
+              for (let i = 1; i <= n; i++) {
+                q.seeds.push({ x: last.x + ((nx - last.x) * i) / n, y: last.y + ((ny - last.y) * i) / n });
+              }
+              if (q.seeds.length > 4000) q.seeds.splice(0, q.seeds.length - 4000);
+            }
+          }
+        }
+      }
     };
 
     const onUp = () => {
       const g = gesture.current;
       transformSkip.current.clear();
+      if (quickDrag.current.active) {
+        const q = quickDrag.current;
+        quickDrag.current = { active: false, seeds: [], subtract: false };
+        if (q.seeds.length > 0) {
+          handlersRef.current.onQuickSelect?.(q.seeds, q.subtract ? "subtract" : "add");
+        }
+      }
       if (g.mode === "pan") {
         g.mode = null;
         return;
@@ -1433,6 +1625,95 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       cancelled = true;
     };
   }, [hasImage, imageUrl, relayout]);
+
+  /* ---------- طبقة تحديد البكسل (marching ants) ---------- */
+
+  useEffect(() => {
+    const fc = fRef.current;
+    if (fc) {
+      if (selMaskRef.current) {
+        fc.remove(selMaskRef.current);
+        selMaskRef.current = null;
+      }
+      if (selAntsRef.current) {
+        fc.remove(selAntsRef.current);
+        selAntsRef.current = null;
+      }
+      if (antsTimer.current !== null) {
+        window.clearInterval(antsTimer.current);
+        antsTimer.current = null;
+      }
+      fc.requestRenderAll();
+    }
+    if (!selectionMask) return;
+    let cancelled = false;
+    const v = viewRef.current;
+    if (v.natW < 2 || v.natH < 2) return;
+    void getMaskEl(selectionMask).then((el) => {
+      if (cancelled || !el) return;
+      const fc2 = fRef.current;
+      if (!fc2) return;
+      try {
+        const box = viewRef.current.box;
+        const mw = el.naturalWidth || el.width || 1;
+        const mh = el.naturalHeight || el.height || 1;
+        const overlay = new FabricImage(el);
+        overlay.set({
+          selectable: false,
+          evented: false,
+          left: box.x,
+          top: box.y,
+          scaleX: Math.max(0.001, box.w / mw),
+          scaleY: Math.max(0.001, box.h / mh),
+          opacity: 0.45,
+        } as never);
+        const ants = new Rect({
+          left: box.x,
+          top: box.y,
+          width: Math.max(1, box.w),
+          height: Math.max(1, box.h),
+          fill: "transparent",
+          stroke: ACCENT,
+          strokeWidth: 1.5,
+          strokeDashArray: [8, 6],
+          strokeDashOffset: 0,
+          selectable: false,
+          evented: false,
+        });
+        selMaskRef.current = overlay;
+        selAntsRef.current = ants;
+        if (bgRef.current) {
+          const idx = fc2.getObjects().indexOf(bgRef.current);
+          fc2.insertAt(idx >= 0 ? idx + 1 : 1, overlay);
+          fc2.insertAt(idx >= 0 ? idx + 2 : 2, ants);
+        } else {
+          fc2.add(overlay);
+          fc2.add(ants);
+        }
+        fc2.requestRenderAll();
+        let off = 0;
+        antsTimer.current = window.setInterval(() => {
+          try {
+            off = (off + 1) % 28;
+            ants.set({ strokeDashOffset: selectionInverted ? -off : off });
+            ants.setCoords();
+            fRef.current?.requestRenderAll();
+          } catch {
+            /* overlay gone */
+          }
+        }, 60);
+      } catch {
+        /* preview only */
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (antsTimer.current !== null) {
+        window.clearInterval(antsTimer.current);
+        antsTimer.current = null;
+      }
+    };
+  }, [selectionMask, selectionInverted, relayout]);
 
   /* ---------- الطبقات/التحديد/الأداة/الزوم ---------- */
 

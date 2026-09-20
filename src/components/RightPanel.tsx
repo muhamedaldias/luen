@@ -1,4 +1,5 @@
 import { useState } from "react";
+import PresetPanel from "./PresetPanel";
 import {
   Layers,
   SlidersHorizontal,
@@ -76,9 +77,12 @@ interface RightPanelProps {
   onRename?: (id: string, name: string) => void;
   docWidth?: number;
   docHeight?: number;
+  onCollapse?: () => void;
   onOpenImage?: () => void;
   onNewCanvas?: () => void;
   onShapeTool?: () => void;
+  onMaskAction?: (a: MaskAction) => void;
+  maskState?: { hasMask: boolean; enabled: boolean } | null;
 }
 
 export default function RightPanel({
@@ -125,6 +129,9 @@ export default function RightPanel({
   onOpenImage,
   onNewCanvas,
   onShapeTool,
+  onMaskAction,
+  maskState = null,
+  onCollapse,
 }: RightPanelProps) {
   const selected = textLayers.find((t) => t.id === selectedTextId) ?? null;
   const selImg = imageLayers.find((l) => selectedLayer?.kind === "image" && l.id === selectedLayer.id) ?? null;
@@ -163,6 +170,24 @@ export default function RightPanel({
             )}
           </button>
         ))}
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            title="Hide side panel"
+            className="flex items-center justify-center rounded shrink-0 transition-colors duration-100"
+            style={{ width: 28, height: 28, marginRight: 4, color: "var(--muted-foreground)", background: "transparent", border: "none", cursor: "pointer" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--foreground)";
+              e.currentTarget.style.background = "var(--secondary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--muted-foreground)";
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <ChevronRight size={14} strokeWidth={2} />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 w-full" style={{ minWidth: 0 }}>
@@ -231,6 +256,8 @@ export default function RightPanel({
             onOpenImage={onOpenImage}
             onNewCanvas={onNewCanvas}
             onShapeTool={onShapeTool}
+            onMaskAction={onMaskAction}
+            maskState={maskState}
           />
         )}
         {activeTab === "adjustments" && (
@@ -250,7 +277,7 @@ export default function RightPanel({
                 {Math.round(selected.x * 100)},{Math.round(selected.y * 100)} · {Math.round(selected.rotation)}°
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-1.5" style={{ minWidth: 0 }}>
+            <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
               <MiniNumber label="X%" value={Math.round(selected.x * 100)} onChange={(v) => onUpdateText(selected.id, { x: v / 100 })} />
               <MiniNumber label="Y%" value={Math.round(selected.y * 100)} onChange={(v) => onUpdateText(selected.id, { y: v / 100 })} />
               <MiniNumber label="W%" value={Math.round(selected.w * 100)} onChange={(v) => onUpdateText(selected.id, { w: Math.max(5, v) / 100 })} />
@@ -373,27 +400,27 @@ function LayersTab({
   const [editName, setEditName] = useState("");
   const [showBlendFor, setShowBlendFor] = useState<string | null>(null);
 
-  function metaFor(kind: string, id: string): { name: string; visible: boolean; locked: boolean; opacity: number; blend?: string; groupId?: string | null; thumb?: string; color?: string } | null {
+  function metaFor(kind: string, id: string): { name: string; visible: boolean; locked: boolean; opacity: number; blend?: string; groupId?: string | null; thumb?: string; color?: string; hasMask?: boolean; maskEnabled?: boolean } | null {
     if (kind === "background") return { name: "Background image", visible: true, locked: true, opacity: 100 };
     if (kind === "text") {
       const l = tMap.get(id);
       if (!l) return null;
-      return { name: l.name, visible: l.visible, locked: l.locked, opacity: l.opacity, blend: (l as { blendMode?: string }).blendMode, groupId: l.groupId };
+      return { name: l.name, visible: l.visible, locked: l.locked, opacity: l.opacity, blend: (l as { blendMode?: string }).blendMode, groupId: l.groupId, hasMask: !!l.mask, maskEnabled: l.mask ? l.mask.visible !== false : false };
     }
     if (kind === "image") {
       const l = iMap.get(id);
       if (!l) return null;
-      return { name: l.name, visible: l.visible, locked: l.locked, opacity: l.opacity, blend: l.blendMode, groupId: l.groupId, thumb: l.url };
+      return { name: l.name, visible: l.visible, locked: l.locked, opacity: l.opacity, blend: l.blendMode, groupId: l.groupId, thumb: l.url, hasMask: !!l.mask, maskEnabled: l.mask ? l.mask.visible !== false : false };
     }
     if (kind === "shape") {
       const l = sMap.get(id);
       if (!l) return null;
-      return { name: l.name, visible: l.visible, locked: l.locked, opacity: l.opacity, blend: l.blendMode, groupId: l.groupId, color: l.color };
+      return { name: l.name, visible: l.visible, locked: l.locked, opacity: l.opacity, blend: l.blendMode, groupId: l.groupId, color: l.color, hasMask: !!l.mask, maskEnabled: l.mask ? l.mask.visible !== false : false };
     }
     if (kind === "solid") {
       const l = fMap.get(id);
       if (!l) return null;
-      return { name: l.name, visible: l.visible, locked: l.locked, opacity: l.opacity, blend: l.blendMode, groupId: l.groupId, color: l.color };
+      return { name: l.name, visible: l.visible, locked: l.locked, opacity: l.opacity, blend: l.blendMode, groupId: l.groupId, color: l.color, hasMask: !!l.mask, maskEnabled: l.mask ? l.mask.visible !== false : false };
     }
     return null;
   }
@@ -605,6 +632,11 @@ function LayersTab({
                 <span className="text-xs shrink-0" style={{ color: "var(--muted-foreground)", fontSize: 9 }}>
                   {ref.kind === "background" ? "BG" : ref.kind === "text" ? "T" : ref.kind === "image" ? "Img" : ref.kind === "shape" ? "◆" : "Fill"}{mm.opacity < 100 ? ` ${mm.opacity}%` : ""}
                 </span>
+                {mm.hasMask && (
+                  <span title={mm.maskEnabled ? "Layer mask (enabled)" : "Layer mask (disabled)"} style={{ color: mm.maskEnabled ? "var(--accent)" : "var(--muted-foreground)", fontSize: 10, flexShrink: 0, fontWeight: 700 }}>
+                    ◑
+                  </span>
+                )}
                 <button onClick={(e) => { e.stopPropagation(); toggleVisible(ref.kind, ref.id); }} className="shrink-0" style={{ color: mm.visible ? "var(--muted-foreground)" : "#4A4845", background: "transparent", border: "none", cursor: "pointer", padding: 2 }} title={mm.visible ? "Hide layer" : "Show layer"}>
                   {mm.visible ? <Eye size={14} strokeWidth={1.75} /> : <EyeOff size={14} strokeWidth={1.75} />}
                 </button>
@@ -839,6 +871,8 @@ function DesignInspector(props: {
   onOpenImage?: () => void;
   onNewCanvas?: () => void;
   onShapeTool?: () => void;
+  onMaskAction?: (a: MaskAction) => void;
+  maskState?: { hasMask: boolean; enabled: boolean } | null;
 }) {
   const { selected, selImg, selShape, selSolid, multiCount } = props;
   if (multiCount > 1) {
@@ -880,6 +914,7 @@ function DesignInspector(props: {
               <button onClick={() => props.onDeleteGeneric?.("image", selImg.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>Delete</button>
             </div>
           </Section>
+          <MaskSection state={props.maskState} onAction={props.onMaskAction} />
         </div>
       </div>
     );
@@ -953,6 +988,7 @@ function DesignInspector(props: {
               <button onClick={() => props.onDeleteGeneric?.("shape", selShape.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>Delete</button>
             </div>
           </Section>
+          <MaskSection state={props.maskState} onAction={props.onMaskAction} />
         </div>
       </div>
     );
@@ -984,6 +1020,7 @@ function DesignInspector(props: {
               <button onClick={() => props.onDeleteGeneric?.("solid", selSolid.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>Delete</button>
             </div>
           </Section>
+          <MaskSection state={props.maskState} onAction={props.onMaskAction} />
         </div>
       </div>
     );
@@ -997,6 +1034,9 @@ function DesignInspector(props: {
           name={selected.name}
           onRename={(n) => props.onRename?.(selected.id, n)}
         />
+        <div className="py-2 px-3 w-full" style={{ minWidth: 0 }}>
+          <MaskSection state={props.maskState} onAction={props.onMaskAction} />
+        </div>
         <DesignTab
           layer={selected}
           onUpdateText={props.onUpdateText}
@@ -1288,6 +1328,7 @@ function AdjustmentsTab({
   );
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState<string | null>(null);
+  const [presetOpen, setPresetOpen] = useState(false);
 
   function reset(key: string) {
     setValues((v) => ({ ...v, [key]: adjustments.find((a) => a.key === key)!.default }));
@@ -1326,7 +1367,7 @@ function AdjustmentsTab({
     setApplied(null);
     const result = await onApplyOperation("pro_enhance", { strength: 70 });
     setApplying(false);
-    setApplied(result !== null ? "Pro enhanced ✨" : "Failed — see error below");
+    setApplied(result !== null ? "Pro enhanced" : "Failed — see error below");
   }
 
   async function removeBackground() {
@@ -1352,18 +1393,18 @@ function AdjustmentsTab({
           opacity: applying ? 0.7 : 1,
           fontWeight: 700,
         }}
-        title="تحسين احترافي بزر واحد: إزالة ضجيج + توازن أبيض + CLAHE + حيوية + حدة — يعمل محلياً وبدقة أعلى مع الباكند"
+        title="One-click pro enhance: denoise + white balance + CLAHE + vibrance + sharpness — works locally, higher quality with backend"
       >
-        {applying ? "Enhancing…" : "✨ Pro Enhance — تحسين بزر واحد"}
+        {applying ? "Enhancing…" : "Pro Enhance — one-click improve"}
       </button>
       <button
         disabled={!hasImage}
         onClick={() => onBlendOpen?.()}
         className="h-9 rounded text-xs font-medium w-full mb-1 transition-colors duration-100"
         style={{ background: "var(--secondary)", color: "var(--foreground)", cursor: !hasImage ? "not-allowed" : "pointer", border: "1px solid var(--border)", opacity: !hasImage ? 0.5 : 1 }}
-        title="دمج صورتين بخوارزميات OpenCV عالية الجودة (Poisson/Laplacian/Feather)"
+        title="Blend two images with high-quality OpenCV algorithms (Poisson/Laplacian/Feather)"
       >
-        🖼️ Blend Two Images… — دمج صورتين
+        Blend Two Images…
       </button>
       <button
         disabled={bgBusy || !hasImage}
@@ -1378,7 +1419,7 @@ function AdjustmentsTab({
         }}
         title={!hasImage ? "Open an image first" : "Background removal (OpenCV GrabCut, rembg when installed)"}
       >
-        {bgBusy ? "Removing background…" : "✨ Remove Background"}
+        {bgBusy ? "Removing background…" : "Remove Background"}
       </button>
       {!hasImage && (
         <p className="text-xs mb-1" style={{ color: "var(--muted-foreground)", fontSize: 11 }}>
@@ -1592,19 +1633,19 @@ function AdjustmentsTab({
 
       <div className="pt-3 flex gap-2 w-full" style={{ minWidth: 0 }}>
         <button
-          disabled={applying || !hasImage}
-          onClick={apply}
-          className="flex-1 h-9 rounded text-xs font-medium transition-colors duration-100"
+          disabled={applying || bgBusy || !hasImage}
+          onClick={() => setPresetOpen((v) => !v)}
+          className="h-9 rounded text-xs font-medium transition-colors duration-100 flex-1"
           style={{
             background: "var(--primary)",
             color: "var(--primary-foreground)",
-            opacity: applying ? 0.6 : 1,
-            cursor: applying || !hasImage ? "not-allowed" : "pointer",
+            opacity: applying || bgBusy || !hasImage ? 0.6 : 1,
+            cursor: applying || bgBusy || !hasImage ? "not-allowed" : "pointer",
             border: "none",
             minWidth: 0,
           }}
         >
-          {applying ? "Applying…" : "Apply"}
+          {presetOpen ? "Hide Presets" : "Show Presets"}
         </button>
         <button
           className="h-9 px-3 rounded text-xs transition-colors duration-100 shrink-0"
@@ -1622,6 +1663,9 @@ function AdjustmentsTab({
         <p className="text-xs mt-1.5" style={{ color: applied === "Applied" ? "var(--success)" : "var(--warning)" }}>
           {applied}
         </p>
+      )}
+      {presetOpen && (
+        <PresetPanel hasImage={hasImage} onApplyOperation={onApplyOperation} />
       )}
     </div>
   );
@@ -1764,7 +1808,7 @@ function ArrangeRow({ onMove }: { onMove: (d: "front" | "back" | "forward" | "ba
   return (
     <div className="w-full" style={{ minWidth: 0 }}>
       <div className="mb-1"><span className="text-xs" style={{ color: "var(--muted-foreground)" }}>Arrange</span></div>
-      <div className="flex gap-1 w-full" style={{ minWidth: 0 }}>
+      <div className="flex gap-1 w-full" style={{ minWidth: 0, flexWrap: "wrap" }}>
         <button style={btn} title="Bring to front" onClick={() => onMove("front")}>⤢ Front</button>
         <button style={btn} title="Bring forward" onClick={() => onMove("forward")}>↑ Fwd</button>
         <button style={btn} title="Send backward" onClick={() => onMove("backward")}>↓ Back</button>
@@ -1830,6 +1874,35 @@ function ToggleLine({ label, value, onChange }: { label: string; value: boolean;
         />
       </button>
     </div>
+  );
+}
+
+export type MaskAction = "add-white" | "add-black" | "toggle" | "remove" | "apply";
+
+function MaskSection({ state, onAction }: {
+  state?: { hasMask: boolean; enabled: boolean } | null;
+  onAction?: (a: MaskAction) => void;
+}) {
+  if (!onAction) return null;
+  const btn: React.CSSProperties = { flex: 1, height: 32, borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: "pointer", border: "1px solid var(--border)", minWidth: 0 };
+  if (!state?.hasMask) {
+    return (
+      <Section title="Mask">
+        <div className="flex gap-1.5">
+          <button onClick={() => onAction("add-white")} title="Add white mask — reveals everything (Ctrl+Shift+M)" style={{ ...btn, background: "var(--secondary)", color: "var(--foreground)" }}>+ White</button>
+          <button onClick={() => onAction("add-black")} title="Add black mask — hides everything" style={{ ...btn, background: "var(--secondary)", color: "var(--foreground)" }}>+ Black</button>
+        </div>
+      </Section>
+    );
+  }
+  return (
+    <Section title="Mask">
+      <ToggleLine label="Enabled" value={state.enabled} onChange={() => onAction("toggle")} />
+      <div className="flex gap-1.5 mt-1.5">
+        <button onClick={() => onAction("apply")} title="Bake the mask into the layer (destructive)" style={{ ...btn, background: "var(--accent)", color: "#fff", border: "none" }}>Apply</button>
+        <button onClick={() => onAction("remove")} title="Remove the mask (reversible until applied)" style={{ ...btn, background: "transparent", color: "var(--danger)" }}>Remove</button>
+      </div>
+    </Section>
   );
 }
 
@@ -1919,7 +1992,7 @@ function FooterGeometry({ name, x, y, w, rotation, onPatch }: {
           {Math.round(x * 100)},{Math.round(y * 100)} · {Math.round(rotation)}°
         </span>
       </div>
-      <div className="grid grid-cols-4 gap-1.5" style={{ minWidth: 0 }}>
+      <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
         <MiniNumber label="X%" value={Math.round(x * 100)} onChange={(v) => onPatch({ x: v / 100 })} />
         <MiniNumber label="Y%" value={Math.round(y * 100)} onChange={(v) => onPatch({ y: v / 100 })} />
         <MiniNumber label="W%" value={Math.round(w * 100)} onChange={(v) => onPatch({ w: Math.max(2, v) / 100 })} />
