@@ -1,8 +1,8 @@
+# Node / Frontend dependencies & builds
 node_modules/
 dist/
 build/
 .cache/
-.env*
 .vite/
 vite.config.*.timestamp-*
 *.tsbuildinfo
@@ -11,23 +11,72 @@ logs/
 *.log
 .claude-replay.*
 .tmp-*
-/.figma/design-context/
 
-# Platform-managed agentplat state, not project source. In the
-# client-initiated single-repo workspace layout (make's `Path: "."` spec) the
-# repo root IS the workspace root, so these land inside this repo rather than
-# beside it.
-/.plugins/
-/.opencode-skills/
-
-# Backend artifacts
-__pycache__/
-*.pyc
-.pytest_cache/
+# Environment variables & secrets
+.env*
+!.env.example
 backend/.env
-backend/storage/
+backend/.env.*
+!backend/.env.example
+
+# Python / Backend artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
 backend/*.db
+backend/storage/
+storage/
 backend/alembic/versions/*.pyc
 
-# local python env
+# Python virtual environments
+.venv/
 backend/.venv/
+env/
+venv/
+ENV/
+
+# Rust / Tauri builds
+src-tauri/target/
+src-tauri/binaries/
+
+# Agent & temporary session caches (Do NOT commit to git)
+.omo/
+.codegraph/
+.playwright-mcp/
+.qa-libs/
+qa-wheels/
+/.plugins/
+/.opencode-skills/
+/.figma/design-context/
+
+# Scratch files, test captures & dumps
+gl.json
+pw.json
+pyee.json
+gls.html
+pe.html
+te.html
+pickpyee.py
+pickurls.py
+pickwheels.py
+qa-capture.py
+qa-dump.py
+readhead.py
+readmeta.py
+te_pick.py
+playwright.install.log
+tests/visual-qa-shots/
+
+# Operating System & IDE artifacts
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
