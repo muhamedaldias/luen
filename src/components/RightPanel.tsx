@@ -16,6 +16,19 @@ import {
   AlignCenter,
   AlignRight,
   AlignJustify,
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignEndVertical,
+  AlignStartHorizontal,
+  AlignCenterHorizontal,
+  AlignEndHorizontal,
+  MoveUp,
+  MoveDown,
+  ChevronsUp,
+  ChevronsDown,
+  GripVertical,
+  Diamond,
+  Blend,
   Bold,
   Italic,
   Underline,
@@ -145,12 +158,16 @@ export default function RightPanel({
     >
       <style>{`@container (max-width: 296px) { .rp-tab-label { display: none; } }`}</style>
       <div
+        role="tablist"
+        aria-label="Right panel tabs"
         className="flex items-center gap-0 px-1 pt-1 shrink-0 w-full"
         style={{ borderBottom: "1px solid var(--border)", minWidth: 0, overflowX: "auto" }}
       >
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
             onClick={() => onTabChange?.(tab.id)}
             className="flex items-center justify-center gap-1.5 px-2 py-3 transition-colors duration-100 relative shrink-0"
             style={{
@@ -460,10 +477,10 @@ function LayersTab({
     if (kind === "text") return <Type size={12} strokeWidth={1.75} style={{ color: "var(--accent)" }} />;
     if (kind === "image") {
       if (m.thumb) return <img src={m.thumb} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} draggable={false} />;
-      return <ImageIcon size={13} strokeWidth={1.75} style={{ color: "#7FB8FF" }} />;
+      return <ImageIcon size={13} strokeWidth={1.75} style={{ color: "var(--accent)" }} />;
     }
-    if (kind === "shape") return <span style={{ fontSize: 12 }}>⬢</span>;
-    if (kind === "solid") return <span style={{ width: 12, height: 12, borderRadius: 3, background: m.color ?? "#888", display: "inline-block" }} />;
+    if (kind === "shape") return <Diamond size={12} strokeWidth={1.75} style={{ color: "var(--muted-foreground)" }} />;
+    if (kind === "solid") return <span style={{ width: 12, height: 12, borderRadius: 3, background: m.color ?? "var(--muted-foreground)", display: "inline-block" }} />;
     return <Layers size={12} />;
   }
 
@@ -510,20 +527,20 @@ function LayersTab({
       {multi && (
         <div className="px-2 py-1.5 flex items-center gap-1" style={{ borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
           <span className="text-xs" style={{ color: "var(--accent)", fontWeight: 600 }}>{selectedIds.length} selected</span>
-          <button onClick={() => onAlign?.("left")} title="Align left" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer" }}>⇤</button>
-          <button onClick={() => onAlign?.("centerX")} title="Align center" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer" }}>⇔</button>
-          <button onClick={() => onAlign?.("right")} title="Align right" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer" }}>⇥</button>
-          <button onClick={() => onAlign?.("top")} title="Align top" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer" }}>⤒</button>
-          <button onClick={() => onAlign?.("centerY")} title="Align middle" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer" }}>⇕</button>
-          <button onClick={() => onAlign?.("bottom")} title="Align bottom" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer" }}>⤓</button>
-          <button onClick={() => onGroup?.()} title="Group selected (Ctrl+G)" style={{ background: "var(--accent)", border: "none", borderRadius: 4, color: "#fff", fontSize: 10, padding: "3px 8px", cursor: "pointer", fontWeight: 600 }}>Group</button>
+          <button onClick={() => onAlign?.("left")} title="Align left" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer", display: "inline-flex", alignItems: "center" }}><AlignStartVertical size={12} strokeWidth={2} /></button>
+          <button onClick={() => onAlign?.("centerX")} title="Align center" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer", display: "inline-flex", alignItems: "center" }}><AlignCenterVertical size={12} strokeWidth={2} /></button>
+          <button onClick={() => onAlign?.("right")} title="Align right" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer", display: "inline-flex", alignItems: "center" }}><AlignEndVertical size={12} strokeWidth={2} /></button>
+          <button onClick={() => onAlign?.("top")} title="Align top" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer", display: "inline-flex", alignItems: "center" }}><AlignStartHorizontal size={12} strokeWidth={2} /></button>
+          <button onClick={() => onAlign?.("centerY")} title="Align middle" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer", display: "inline-flex", alignItems: "center" }}><AlignCenterHorizontal size={12} strokeWidth={2} /></button>
+          <button onClick={() => onAlign?.("bottom")} title="Align bottom" style={{ background: "var(--secondary)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--foreground)", fontSize: 10, padding: "3px 6px", cursor: "pointer", display: "inline-flex", alignItems: "center" }}><AlignEndHorizontal size={12} strokeWidth={2} /></button>
+          <button onClick={() => onGroup?.()} title="Group selected (Ctrl+G)" style={{ background: "var(--accent)", border: "none", borderRadius: 4, color: "var(--accent-foreground)", fontSize: 10, padding: "3px 8px", cursor: "pointer", fontWeight: 600 }}>Group</button>
         </div>
       )}
 
       {groupIds.length > 0 && (
         <div className="px-2 py-1 flex flex-wrap gap-1" style={{ borderBottom: "1px solid var(--border)" }}>
           {groupIds.map((gid) => (
-            <span key={gid} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(201,123,74,0.12)", border: "1px solid rgba(201,123,74,0.35)", borderRadius: 999, padding: "2px 4px 2px 8px", fontSize: 10, color: "var(--foreground)" }}>
+            <span key={gid} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "color-mix(in srgb, var(--accent) 12%, transparent)", border: "1px solid var(--accent)", borderRadius: 999, padding: "2px 4px 2px 8px", fontSize: 10, color: "var(--foreground)" }}>
               ▦ {groupNames[gid] ?? gid.slice(0, 8)}
               <button onClick={() => onUngroup?.(gid)} title="Ungroup" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted-foreground)", fontSize: 11, padding: "0 4px" }}>×</button>
             </span>
@@ -567,8 +584,8 @@ function LayersTab({
                 onDragEnd={() => { setDragId(null); setOverId(null); }}
                 className="flex items-center gap-2 px-2 py-2 cursor-pointer transition-colors duration-75 w-full"
                 style={{
-                  background: active ? "var(--secondary)" : dragId === ref.id ? "rgba(201,123,74,0.08)" : "transparent",
-                  borderLeft: `2px solid ${active ? "var(--accent)" : inGroup ? "rgba(201,123,74,0.5)" : "transparent"}`,
+                  background: active ? "var(--secondary)" : dragId === ref.id ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
+                  borderLeft: active ? "2px solid var(--accent)" : inGroup ? "2px solid color-mix(in srgb, var(--accent) 50%, transparent)" : "transparent",
                   minWidth: 0,
                   opacity: dragId === ref.id ? 0.5 : 1,
                 }}
@@ -580,8 +597,8 @@ function LayersTab({
                 }}
                 title={ref.kind === "background" ? "Background (locked bottom)" : `${ref.kind} · drag to reorder · Ctrl+click multi-select · double-click rename`}
               >
-                <span style={{ color: "var(--muted-foreground)", fontSize: 10, cursor: ref.id === "__background__" ? "default" : "grab", flexShrink: 0 }}>⋮⋮</span>
-                <div className="rounded shrink-0 flex items-center justify-center" style={{ width: 28, height: 28, background: "#2A2927", border: "1px solid var(--border)", overflow: "hidden" }}>
+                <span style={{ color: "var(--muted-foreground)", cursor: ref.id === "__background__" ? "default" : "grab", flexShrink: 0, display: "inline-flex", alignItems: "center" }}><GripVertical size={12} strokeWidth={2} /></span>
+                <div className="rounded shrink-0 flex items-center justify-center" style={{ width: 28, height: 28, background: "var(--secondary)", border: "1px solid var(--border)", overflow: "hidden" }}>
                   {iconFor(ref.kind, ref.id, mm)}
                 </div>
                 {editingId === ref.id ? (
@@ -616,26 +633,26 @@ function LayersTab({
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowBlendFor((v) => (v === ref.id ? null : ref.id)); }}
                     title={`Blend: ${mm.blend} — click to change`}
-                    style={{ background: "rgba(127,184,255,0.15)", border: "1px solid rgba(127,184,255,0.4)", borderRadius: 4, color: "#7FB8FF", fontSize: 8, padding: "1px 4px", cursor: "pointer", flexShrink: 0 }}
+                    style={{ background: "color-mix(in srgb, var(--accent) 15%, transparent)", border: "1px solid var(--accent)", borderRadius: 4, color: "var(--accent)", fontSize: 8, padding: "1px 4px", cursor: "pointer", flexShrink: 0, display: "inline-flex", alignItems: "center" }}
                   >
-                    ◐
+                    <Blend size={10} strokeWidth={2} />
                   </button>
                 )}
                 <span className="text-xs shrink-0" style={{ color: "var(--muted-foreground)", fontSize: 9 }}>
-                  {ref.kind === "background" ? "BG" : ref.kind === "text" ? "T" : ref.kind === "image" ? "Img" : ref.kind === "shape" ? "◆" : "Fill"}{mm.opacity < 100 ? ` ${mm.opacity}%` : ""}
+                  {ref.kind === "background" ? "BG" : ref.kind === "text" ? "T" : ref.kind === "image" ? "Img" : ref.kind === "shape" ? "Sh" : "Fill"}{mm.opacity < 100 ? ` ${mm.opacity}%` : ""}
                 </span>
                 {mm.hasMask && (
-                  <span title={mm.maskEnabled ? "Layer mask (enabled)" : "Layer mask (disabled)"} style={{ color: mm.maskEnabled ? "var(--accent)" : "var(--muted-foreground)", fontSize: 10, flexShrink: 0, fontWeight: 700 }}>
-                    ◑
+                  <span title={mm.maskEnabled ? "Layer mask (enabled)" : "Layer mask (disabled)"} style={{ color: mm.maskEnabled ? "var(--accent)" : "var(--muted-foreground)", flexShrink: 0, display: "inline-flex", alignItems: "center" }}>
+                    <Layers size={10} strokeWidth={2} />
                   </span>
                 )}
-                <button onClick={(e) => { e.stopPropagation(); toggleVisible(ref.kind, ref.id); }} className="shrink-0" style={{ color: mm.visible ? "var(--muted-foreground)" : "#4A4845", background: "transparent", border: "none", cursor: "pointer", padding: 2 }} title={mm.visible ? "Hide layer" : "Show layer"}>
+                <button onClick={(e) => { e.stopPropagation(); toggleVisible(ref.kind, ref.id); }} className="shrink-0" style={{ color: "var(--muted-foreground)", opacity: mm.visible ? 1 : 0.4, background: "transparent", border: "none", cursor: "pointer", padding: 2 }} title={mm.visible ? "Hide layer" : "Show layer"}>
                   {mm.visible ? <Eye size={14} strokeWidth={1.75} /> : <EyeOff size={14} strokeWidth={1.75} />}
                 </button>
                 {mm.locked && <Lock size={11} strokeWidth={1.75} style={{ color: "var(--muted-foreground)", opacity: 0.5, flexShrink: 0 }} />}
               </div>
               {showBlendFor === ref.id && (
-                <div className="px-8 py-1" style={{ background: "rgba(0,0,0,0.25)" }}>
+                <div className="px-8 py-1" style={{ background: "var(--secondary)" }}>
                   <select
                     value={mm.blend ?? "source-over"}
                     onChange={(e) => { onBlendChange?.(ref.id, e.target.value); setShowBlendFor(null); }}
@@ -662,7 +679,7 @@ function LayersTab({
         </div>
       )}
       <p className="px-3 py-1.5 text-xs" style={{ color: "var(--muted-foreground)", fontSize: 10, lineHeight: 1.6 }}>
-        Top = front · drag ⋮⋮ to reorder · Ctrl+click = multi-select · double-click = rename · ◐ = blend mode
+        Top = front · drag grip to reorder · Ctrl+click = multi-select · double-click = rename
       </p>
     </div>
   );
@@ -678,14 +695,14 @@ function LayerRow({ icon, name, badge, active, visible, locked, opacity, onSelec
       style={{ background: active ? "var(--secondary)" : "transparent", borderLeft: `2px solid ${active ? "var(--accent)" : "transparent"}`, minWidth: 0 }}
       onClick={onSelect}
     >
-      <div className="rounded shrink-0 flex items-center justify-center" style={{ width: 24, height: 24, background: "#2A2927", border: "1px solid var(--border)" }}>
+      <div className="rounded shrink-0 flex items-center justify-center" style={{ width: 24, height: 24, background: "var(--secondary)", border: "1px solid var(--border)" }}>
         {icon}
       </div>
       <span className="flex-1 text-xs truncate" style={{ color: visible ? "var(--foreground)" : "var(--muted-foreground)", minWidth: 0, textDecoration: !visible ? "line-through" : undefined }}>
         {name}
       </span>
       <span className="text-xs shrink-0" style={{ color: "var(--muted-foreground)", fontSize: 9 }}>{badge}{opacity < 100 ? ` ${opacity}%` : ""}</span>
-      <button onClick={(e) => { e.stopPropagation(); onToggleVisible(); }} className="shrink-0" style={{ color: visible ? "var(--muted-foreground)" : "#4A4845", background: "transparent", border: "none", cursor: "pointer", padding: 2 }} title={visible ? "Hide layer" : "Show layer"}>
+      <button onClick={(e) => { e.stopPropagation(); onToggleVisible(); }} className="shrink-0" style={{ color: "var(--muted-foreground)", opacity: visible ? 1 : 0.4, background: "transparent", border: "none", cursor: "pointer", padding: 2 }} title={visible ? "Hide layer" : "Show layer"}>
         {visible ? <Eye size={13} strokeWidth={1.75} /> : <EyeOff size={13} strokeWidth={1.75} />}
       </button>
       {locked && <Lock size={11} strokeWidth={1.75} style={{ color: "var(--muted-foreground)", opacity: 0.5, flexShrink: 0 }} />}
@@ -789,9 +806,9 @@ function GeometryPxSection({ x, y, w, h, rotation, docW, docH, lockable, hideH, 
           title={locked ? "Unlock aspect ratio" : "Lock aspect ratio"}
           className="flex items-center justify-center gap-1.5 h-8 rounded text-xs mt-1.5 w-full"
           style={{
-            background: locked ? "rgba(201,123,74,0.12)" : "var(--secondary)",
+            background: locked ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "var(--secondary)",
             color: locked ? "var(--accent)" : "var(--muted-foreground)",
-            border: locked ? "1px solid rgba(201,123,74,0.4)" : "1px solid var(--border)",
+            border: locked ? "1px solid var(--accent)" : "1px solid var(--border)",
             cursor: "pointer",
             fontWeight: locked ? 600 : 400,
             minWidth: 0,
@@ -819,12 +836,12 @@ function MultiSelectPanel({ count, onAlign, onDistribute, onGroup }: {
     <div className="py-2 px-3 flex flex-col gap-0 w-full" style={{ minWidth: 0 }}>
       <Section title={`${count} layers selected`}>
         <div className="flex gap-1 w-full" style={{ minWidth: 0, flexWrap: "wrap" }}>
-          <button style={btn} title="Align left" onClick={() => onAlign?.("left")}>⇤</button>
-          <button style={btn} title="Align center" onClick={() => onAlign?.("centerX")}>⇔</button>
-          <button style={btn} title="Align right" onClick={() => onAlign?.("right")}>⇥</button>
-          <button style={btn} title="Align top" onClick={() => onAlign?.("top")}>⤒</button>
-          <button style={btn} title="Align middle" onClick={() => onAlign?.("centerY")}>⇕</button>
-          <button style={btn} title="Align bottom" onClick={() => onAlign?.("bottom")}>⤓</button>
+          <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title="Align left" onClick={() => onAlign?.("left")}><AlignStartVertical size={13} strokeWidth={2} /></button>
+          <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title="Align center" onClick={() => onAlign?.("centerX")}><AlignCenterVertical size={13} strokeWidth={2} /></button>
+          <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title="Align right" onClick={() => onAlign?.("right")}><AlignEndVertical size={13} strokeWidth={2} /></button>
+          <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title="Align top" onClick={() => onAlign?.("top")}><AlignStartHorizontal size={13} strokeWidth={2} /></button>
+          <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title="Align middle" onClick={() => onAlign?.("centerY")}><AlignCenterHorizontal size={13} strokeWidth={2} /></button>
+          <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title="Align bottom" onClick={() => onAlign?.("bottom")}><AlignEndHorizontal size={13} strokeWidth={2} /></button>
         </div>
         <div className="flex gap-1.5 w-full" style={{ minWidth: 0 }}>
           <button onClick={() => onDistribute?.("x")} className="flex-1 h-8 rounded text-xs" style={{ background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", cursor: "pointer", minWidth: 0 }}>Distribute ↔</button>
@@ -926,7 +943,7 @@ function DesignInspector(props: {
     return (
       <div className="w-full" style={{ minWidth: 0 }}>
         <InspectorHeader
-          icon={<ImageIcon size={15} strokeWidth={1.75} style={{ color: "#7FB8FF" }} />}
+          icon={<ImageIcon size={15} strokeWidth={1.75} style={{ color: "var(--accent)" }} />}
           typeLabel="Image layer"
           name={selImg.name}
           onRename={(n) => props.onRename?.(selImg.id, n)}
@@ -974,7 +991,7 @@ function DesignInspector(props: {
     return (
       <div className="w-full" style={{ minWidth: 0 }}>
         <InspectorHeader
-          icon={<span style={{ fontSize: 14 }}>⬢</span>}
+          icon={<Diamond size={14} strokeWidth={1.75} style={{ color: "var(--muted-foreground)" }} />}
           typeLabel={`${selShape.shape === "rect" ? "Rectangle" : selShape.shape === "ellipse" ? "Ellipse" : selShape.shape === "line" ? "Line" : "Arrow"} shape`}
           name={selShape.name}
           onRename={(n) => props.onRename?.(selShape.id, n)}
@@ -1405,6 +1422,10 @@ function AdjustmentsTab({
       contrast: values.contrast,
       saturation: values.saturation,
       sharpness: values.sharpness,
+      blur: values.blur,
+      highlights: values.highlights,
+      shadows: values.shadows,
+      temperature: values.temperature,
     };
     const result = await onApplyOperation("adjust", params);
     setApplying(false);
@@ -1448,8 +1469,8 @@ function AdjustmentsTab({
         onClick={() => void proEnhance()}
         className="h-9 rounded text-xs font-medium w-full mb-1 transition-colors duration-100"
         style={{
-          background: applying || bgBusy || !hasImage ? "var(--secondary)" : "linear-gradient(135deg,#C97B4A,#E8A87C)",
-          color: applying || bgBusy || !hasImage ? "var(--muted-foreground)" : "#fff",
+          background: applying || bgBusy || !hasImage ? "var(--secondary)" : "var(--accent)",
+          color: applying || bgBusy || !hasImage ? "var(--muted-foreground)" : "var(--accent-foreground)",
           cursor: applying || bgBusy || !hasImage ? "not-allowed" : "pointer",
           border: "none",
           opacity: applying ? 0.7 : 1,
@@ -1529,12 +1550,12 @@ function AdjustmentsTab({
         <div className="grid grid-cols-3 gap-1.5" style={{ minWidth: 0 }}>
           {(
             [
-              { label: "Cinematic", name: "cinematic", preview: "linear-gradient(135deg,#0f2a33 0%,#c97b4a 100%)" },
-              { label: "Warm", name: "warm", preview: "linear-gradient(135deg,#7a3b12 0%,#e8a87c 100%)" },
-              { label: "Cold", name: "cold", preview: "linear-gradient(135deg,#12395e 0%,#7fb8d4 100%)" },
-              { label: "Noir", name: "noir", preview: "linear-gradient(135deg,#000000 0%,#8a8a8a 100%)" },
-              { label: "Faded", name: "faded", preview: "linear-gradient(135deg,#8a7f72 0%,#d8cfc2 100%)" },
-              { label: "Vivid", name: "vivid", preview: "linear-gradient(135deg,#b83a2a 0%,#e8c832 100%)" },
+              { label: "Cinematic", name: "cinematic", preview: "linear-gradient(135deg,var(--card) 0%,var(--accent) 100%)" },
+              { label: "Warm", name: "warm", preview: "linear-gradient(135deg,color-mix(in srgb, var(--accent) 55%, transparent) 0%,var(--warning) 100%)" },
+              { label: "Cold", name: "cold", preview: "linear-gradient(135deg,var(--card) 0%,var(--muted-foreground) 100%)" },
+              { label: "Noir", name: "noir", preview: "linear-gradient(135deg,var(--background) 0%,var(--muted-foreground) 100%)" },
+              { label: "Faded", name: "faded", preview: "linear-gradient(135deg,var(--muted) 0%,var(--secondary) 100%)" },
+              { label: "Vivid", name: "vivid", preview: "linear-gradient(135deg,var(--danger) 0%,var(--warning) 100%)" },
             ] as { label: string; name: string; preview: string }[]
           ).map((f) => (
             <button
@@ -1710,6 +1731,7 @@ function AdjustmentsTab({
           {presetOpen ? "Hide Presets" : "Show Presets"}
         </button>
         <button
+          onClick={() => setValues(Object.fromEntries(adjustments.map((a) => [a.key, a.default])))}
           className="h-9 px-3 rounded text-xs transition-colors duration-100 shrink-0"
           style={{
             background: "var(--secondary)",
@@ -1778,11 +1800,6 @@ function HistoryTab({ stack, idx, onJump }: { stack: string[]; idx: number; onJu
 function ComparisonStrip() {
   const [expanded, setExpanded] = useState(false);
 
-  const results = [
-    { id: "r1", label: "OpenCV Inpaint", ready: true },
-    { id: "r2", label: "LaMa AI", ready: false },
-  ];
-
   return (
     <div className="shrink-0 w-full" style={{ borderTop: "1px solid var(--border)", minWidth: 0 }}>
       <button
@@ -1801,30 +1818,10 @@ function ComparisonStrip() {
       </button>
 
       {expanded && (
-        <div className="px-3 pb-3 flex gap-2 w-full" style={{ minWidth: 0 }}>
-          {results.map((r) => (
-            <div key={r.id} className="flex-1 rounded overflow-hidden" style={{ border: "1px solid var(--border)", minWidth: 0 }}>
-              <div className="flex items-center justify-center" style={{ height: 64, background: r.ready ? "#2A2927" : "#1C1B1A" }}>
-                {!r.ready ? (
-                  <div className="flex gap-0.5">
-                    {[0, 1, 2].map((i) => (
-                      <div key={i} className="w-1 h-1 rounded-full" style={{ background: "var(--muted-foreground)", animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-                    ))}
-                  </div>
-                ) : (
-                  <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>Result</span>
-                )}
-              </div>
-              <div className="px-2 py-1.5 flex items-center justify-between" style={{ background: "var(--secondary)", minWidth: 0 }}>
-                <span className="text-xs truncate" style={{ color: "var(--muted-foreground)", minWidth: 0 }}>{r.label}</span>
-                {r.ready && (
-                  <button className="text-xs font-medium ml-1 shrink-0" style={{ color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer" }}>
-                    Use
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+        <div className="px-3 pb-3 w-full" style={{ minWidth: 0 }}>
+          <p className="text-xs" style={{ color: "var(--muted-foreground)", fontSize: 11, lineHeight: 1.6, margin: 0 }}>
+            No comparison results yet — run an operation that produces variants and they will appear here.
+          </p>
         </div>
       )}
     </div>
@@ -1847,7 +1844,7 @@ function BlendRow({ value, onChange }: { value: string; onChange: (v: string) =>
     <div className="w-full" style={{ minWidth: 0 }}>
       <div className="flex items-center justify-between mb-1" style={{ minWidth: 0 }}>
         <span className="text-xs truncate" style={{ color: "var(--muted-foreground)", minWidth: 0 }}>Blend mode</span>
-        <span className="text-xs shrink-0 ml-2" style={{ color: value !== "source-over" ? "#7FB8FF" : "var(--foreground)" }}>
+        <span className="text-xs shrink-0 ml-2" style={{ color: value !== "source-over" ? "var(--accent)" : "var(--foreground)" }}>
           {BLEND_MODES.find((b) => b.value === value)?.label ?? "Normal"}
         </span>
       </div>
@@ -1871,10 +1868,10 @@ function ArrangeRow({ onMove }: { onMove: (d: "front" | "back" | "forward" | "ba
     <div className="w-full" style={{ minWidth: 0 }}>
       <div className="mb-1"><span className="text-xs" style={{ color: "var(--muted-foreground)" }}>Arrange</span></div>
       <div className="flex gap-1 w-full" style={{ minWidth: 0, flexWrap: "wrap" }}>
-        <button style={btn} title="Bring to front" onClick={() => onMove("front")}>⤢ Front</button>
-        <button style={btn} title="Bring forward" onClick={() => onMove("forward")}>↑ Fwd</button>
-        <button style={btn} title="Send backward" onClick={() => onMove("backward")}>↓ Back</button>
-        <button style={btn} title="Send to back" onClick={() => onMove("back")}>⤡ Back</button>
+        <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }} title="Bring to front" onClick={() => onMove("front")}><ChevronsUp size={12} strokeWidth={2} /> Front</button>
+        <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }} title="Bring forward" onClick={() => onMove("forward")}><MoveUp size={12} strokeWidth={2} /> Fwd</button>
+        <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }} title="Send backward" onClick={() => onMove("backward")}><MoveDown size={12} strokeWidth={2} /> Back</button>
+        <button style={{ ...btn, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }} title="Send to back" onClick={() => onMove("back")}><ChevronsDown size={12} strokeWidth={2} /> Back</button>
       </div>
     </div>
   );
@@ -1961,7 +1958,7 @@ function MaskSection({ state, onAction }: {
     <Section title="Mask">
       <ToggleLine label="Enabled" value={state.enabled} onChange={() => onAction("toggle")} />
       <div className="flex gap-1.5 mt-1.5">
-        <button onClick={() => onAction("apply")} title="Bake the mask into the layer (destructive)" style={{ ...btn, background: "var(--accent)", color: "#fff", border: "none" }}>Apply</button>
+        <button onClick={() => onAction("apply")} title="Bake the mask into the layer (destructive)" style={{ ...btn, background: "var(--accent)", color: "var(--accent-foreground)", border: "none" }}>Apply</button>
         <button onClick={() => onAction("remove")} title="Remove the mask (reversible until applied)" style={{ ...btn, background: "transparent", color: "var(--danger)" }}>Remove</button>
       </div>
     </Section>
