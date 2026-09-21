@@ -53,6 +53,8 @@ export interface ShapeLayer {
   fillEnabled: boolean;
   strokeColor: string;
   strokeWidth: number;
+  /** Corner radius as a fraction of document width (0 = sharp). Applies to rect shapes. */
+  radius?: number;
   opacity: number;
   visible: boolean;
   locked: boolean;
@@ -115,6 +117,7 @@ export function createShapeLayer(partial?: Partial<ShapeLayer>): ShapeLayer {
     fillEnabled: partial?.fillEnabled ?? true,
     strokeColor: partial?.strokeColor ?? "#EDEBE7",
     strokeWidth: partial?.strokeWidth ?? 0,
+    radius: partial?.radius ?? 0,
     opacity: partial?.opacity ?? 100,
     visible: partial?.visible ?? true,
     locked: partial?.locked ?? false,

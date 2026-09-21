@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Undo2, Redo2, Save, Download, ChevronDown, Settings } from "lucide-react";
+import { Undo2, Redo2, Save, Download, ChevronDown, Settings, PanelRightClose, PanelRightOpen } from "lucide-react";
 
 type MenuKey = "file" | "edit" | "image" | "select" | "layer" | "filter" | null;
 
@@ -104,9 +104,11 @@ interface TopBarProps {
   onOpenProject?: () => void;
   onRemoveBackground?: () => void;
   onMenuAction?: (item: string) => void;
+  panelOpen?: boolean;
+  onTogglePanel?: () => void;
 }
 
-export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRedo, saveState = "saved", onSettingsOpen, onSave, onExport, onOpen, onNew, onSaveProject, onOpenProject, onRemoveBackground, onMenuAction }: TopBarProps) {
+export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRedo, saveState = "saved", onSettingsOpen, onSave, onExport, onOpen, onNew, onSaveProject, onOpenProject, onRemoveBackground, onMenuAction, panelOpen = true, onTogglePanel }: TopBarProps) {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -166,6 +168,7 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
 
 return (
      <div
+       data-testid="top-bar"
        className="flex items-center h-[60px] px-4 gap-2 shrink-0"
        style={{
          background: "var(--card)",
@@ -313,6 +316,14 @@ return (
           onClick={onSettingsOpen}
           shortcut="⌘,"
         />
+
+        <div className="w-px h-5 mx-1" style={{ background: "var(--border)" }} />
+
+        <ActionBtn
+          icon={panelOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+          label={panelOpen ? "Hide side panel" : "Show side panel"}
+          onClick={onTogglePanel}
+        />
       </div>
     </div>
   );
@@ -338,6 +349,7 @@ function ActionBtn({
       <button
         disabled={disabled}
         onClick={onClick}
+        title={label}
         className="flex items-center justify-center w-10 h-10 rounded transition-colors duration-100"
         style={{
           color: disabled ? "var(--muted-foreground)" : hovered ? "var(--foreground)" : "var(--muted-foreground)",

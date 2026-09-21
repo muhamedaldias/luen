@@ -301,7 +301,7 @@ async function drawShapeCanvas(ctx: CanvasRenderingContext2D, W: number, H: numb
       c.fill();
     }
   } else {
-    drawRoundRect(c, 0, 0, dw, dh, Math.min(10 * scale, dw / 4, dh / 4));
+    drawRoundRect(c, 0, 0, dw, dh, Math.max(0, Math.min((s.radius ?? 0) * W, dw / 2, dh / 2)));
     if (s.fillEnabled) {
       c.fillStyle = s.color;
       c.fill();

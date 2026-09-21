@@ -12,7 +12,8 @@ import { uploadImage, runAndWait, resolveUrl } from "./lib/api";
 import { createTextLayer, type TextLayer } from "./lib/textLayers";
 import { exportFlattenedDataUrl } from "./lib/exportComposite";
 import { toCleanDataUrlBestEffort } from "./lib/safeImage";
-import { downloadProject, readProjectFile } from "./lib/projectFile";
+import { downloadProject, readProjectFile, serializeProject, parseProject, type LumenProject } from "./lib/projectFile";
+import { saveAutosave, loadAutosave, clearAutosave } from "./lib/autosave";
 import { applyLocalOp, getNaturalSize } from "./lib/localOps";
 import MenuDialog, { type DialogKind } from "./components/MenuDialog";
 import MaskEditor from "./components/MaskEditor";
@@ -117,6 +118,7 @@ async function upscaleMaskToImage(maskUrl: string, imageUrl: string): Promise<st
 export default function App() {
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [zoom, setZoom] = useState(100);
+  const [fitScale, setFitScale] = useState(1);
   const [busy, setBusy] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [agentCollapsed, setAgentCollapsed] = useState(true);
@@ -250,6 +252,110 @@ export default function App() {
     if (theme) applyTheme(theme);
   }, [currentTheme]);
 
+  // ── الحفظ التلقائي والحفظ بـ Ctrl+S ──
+  const [autosaveDirty, setAutosaveDirty] = useState(false);
+  const [autosaveRestore, setAutosaveRestore] = useState<{ savedAt: number; json: string } | null>(null);
+
+  // تخطيط اللوحات المحفوظ (حجم اللوحة اليمنى) — يُقرأ مرة واحدة عند الإقلاع.
+  const [panelLayout] = useState<Record<string, number> | undefined>(() => {
+    try {
+      const raw = localStorage.getItem("lumen_panel_layout_v1");
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, number>) : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  const docSizeRef = useRef(docSize);
+  const autosaveDirtyRef = useRef(false);
+  const autosaveTimer = useRef<number | null>(null);
+  const autosaveChecked = useRef(false);
+
+  useEffect(() => {
+    docSizeRef.current = docSize;
+    autosaveDirtyRef.current = autosaveDirty;
+  }, [docSize, autosaveDirty]);
+
+  const buildProjectDoc = useCallback(
+    () => ({
+      docSize: { ...docSizeRef.current },
+      image: imageRef.current ? { ...imageRef.current } : null,
+      textLayers: cloneLayers(layersRef.current),
+      imageLayers: cloneLayers(imageLayersRef.current),
+      shapeLayers: cloneLayers(shapeLayersRef.current),
+      solidLayers: cloneLayers(solidLayersRef.current),
+      order: [...orderRef.current],
+      groups: { ...groupsRef.current },
+    }),
+    []
+  );
+
+  const handleSaveProject = useCallback(() => {
+    try {
+      downloadProject(buildProjectDoc());
+      setAutosaveDirty(false);
+    } catch {
+      setLoadError("Could not save project file");
+    }
+  }, [buildProjectDoc]);
+
+  // حفظ تلقائي في IndexedDB — أفضل جهد، لا يُعطّل التطبيق عند الفشل.
+  const writeAutosave = useCallback(async () => {
+    try {
+      await saveAutosave(serializeProject(buildProjectDoc()));
+      setAutosaveDirty(false);
+    } catch {
+      /* أفضل جهد */
+    }
+  }, [buildProjectDoc]);
+
+  // كل تعديل (دخول التاريخ أو تغيّر الطبقات) يجدولة حفظاً مؤجلاً.
+  useEffect(() => {
+    const hasDoc = imageRef.current !== null || layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
+    if (!hasDoc) return;
+    setAutosaveDirty(true);
+    if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = window.setTimeout(() => {
+      autosaveTimer.current = null;
+      void writeAutosave();
+    }, 2500);
+    return () => {
+      if (autosaveTimer.current !== null) {
+        window.clearTimeout(autosaveTimer.current);
+        autosaveTimer.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyIdx, history.length, textLayers, imageLayers, shapeLayers, solidLayers, layerOrder, groupNames, docSize, canvasImage, writeAutosave]);
+
+  // عند إخفاء التبويب: اكتب الحفظ فوراً بدل انتظار المؤجل.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState !== "hidden" || !autosaveDirtyRef.current) return;
+      if (autosaveTimer.current !== null) {
+        window.clearTimeout(autosaveTimer.current);
+        autosaveTimer.current = null;
+      }
+      void writeAutosave();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [writeAutosave]);
+
+  // عند الإقلاع: اعرض نافذة استعادة إن وُجدت نسخة تلقائية.
+  useEffect(() => {
+    if (autosaveChecked.current) return;
+    autosaveChecked.current = true;
+    void (async () => {
+      try {
+        const rec = await loadAutosave();
+        if (rec && rec.json) setAutosaveRestore({ savedAt: rec.savedAt, json: rec.json });
+      } catch {
+        /* لا نسخة تلقائية */
+      }
+    })();
+  }, []);
+
   const restoreIdx = useCallback(async (next: number) => {
     const h = historyRef.current;
     const clamped = Math.max(0, Math.min(h.length - 1, next));
@@ -278,20 +384,28 @@ export default function App() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const target = e.target as HTMLElement;
-      if (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.tagName === "SELECT") return;
+      // المطابقة عبر e.code تجعل الاختصارات تعمل على أي تخطيط لوحة مفاتيح (عربي/لاتيني).
+      const k = e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) {
+      // تجاهل التحرير النصي فقط — المنزلقات ومنتقيات الألوان ليست تحريراً نصياً.
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName ?? "";
+      const nonTextInput = new Set(["range", "color", "checkbox", "radio", "file", "button", "submit", "reset", "image", "hidden"]);
+      const inputType = tag === "INPUT" ? (target as HTMLInputElement).type : "";
+      const isTextEntry = tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable === true || (tag === "INPUT" && !nonTextInput.has(inputType));
+      if (isTextEntry) return;
+      if (!mod && e.repeat) return;
+      if (mod && k === "z" && !e.shiftKey) {
         e.preventDefault();
         void restoreIdx(historyIdxRef.current - 1);
         return;
       }
-      if ((mod && e.key.toLowerCase() === "y") || (mod && e.key.toLowerCase() === "z" && e.shiftKey)) {
+      if ((mod && k === "y") || (mod && k === "z" && e.shiftKey)) {
         e.preventDefault();
         void restoreIdx(historyIdxRef.current + 1);
         return;
       }
-      if (mod && e.shiftKey && e.key.toLowerCase() === "m") {
+      if (mod && e.shiftKey && k === "m") {
         e.preventDefault();
         if (selectionMaskRef.current) {
           void selectionToLayerMask();
@@ -300,12 +414,12 @@ export default function App() {
         }
         return;
       }
-      if (mod && e.shiftKey && e.key.toLowerCase() === "i") {
+      if (mod && e.shiftKey && k === "i") {
         e.preventDefault();
         void invertPixelSelection();
         return;
       }
-      if (mod && e.shiftKey && e.key.toLowerCase() === "a") {
+      if (mod && e.shiftKey && k === "a") {
         e.preventDefault();
         clearPixelSelection(true);
         setSelectedIds([]);
@@ -314,18 +428,29 @@ export default function App() {
         showNotice("Selection cleared");
         return;
       }
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") {
+      if (mod && !e.shiftKey && !e.altKey && k === "l") {
         e.preventDefault();
         if (imageRef.current) setMenuDialog("levels");
         return;
       }
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "m") {
+      if (mod && !e.shiftKey && !e.altKey && k === "m") {
         e.preventDefault();
         if (imageRef.current) setMenuDialog("curves");
         return;
       }
+      if (mod && !e.shiftKey && !e.altKey && k === "s") {
+        e.preventDefault();
+        const hasDoc = imageRef.current !== null || layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
+        if (hasDoc) handleSaveProject();
+        else showNotice("Nothing to save yet");
+        return;
+      }
+      if (mod && e.shiftKey && !e.altKey && k === "e") {
+        e.preventDefault();
+        void downloadCurrentImage("export.png");
+        return;
+      }
       if (mod) return;
-      const k = e.key.toLowerCase();
       if (k === "v") setActiveTool("select");
       else if (k === "w") setActiveTool("smart-select");
       else if (k === "q") setActiveTool("quick-select");
@@ -348,7 +473,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [restoreIdx]);
+  }, [restoreIdx, handleSaveProject]);
 
   // دمج ضربات fabric المعلقة في الصورة قبل أي عملية raster (فلاتر/إزالة/تصدير).
   const bakeFlush = useCallback(async (): Promise<CanvasImage | null> => {
@@ -1764,7 +1889,7 @@ export default function App() {
 
   const canUndo = historyIdx > 0;
   const canRedo = historyIdx < history.length - 1;
-  const saveState = busy ? "saving" : historyIdx > 0 ? "unsaved" : "saved";
+  const saveState = busy ? "saving" : autosaveDirty ? "unsaved" : "saved";
 
   async function handleBlendConfirm(p: { foregroundUrl: string; foregroundId: string | null; mode: string; scale: number; x: number; y: number; feather: number; colorMatch: boolean }) {
     await bakeFlush();
@@ -1825,8 +1950,8 @@ export default function App() {
       const fresh = imageRef.current;
       const dataUrl = await exportFlattenedDataUrl({
         imageUrl: fresh?.url ?? null,
-        width: fresh?.width ?? docSize.w,
-        height: fresh?.height ?? docSize.h,
+        width: fresh?.width ?? docSizeRef.current.w,
+        height: fresh?.height ?? docSizeRef.current.h,
         textLayers: layersRef.current,
         imageLayers: imageLayersRef.current,
         shapeLayers: shapeLayersRef.current,
@@ -1852,21 +1977,32 @@ export default function App() {
     void downloadCurrentImage("lumen-image.png");
   }
 
-  function handleSaveProject() {
-    try {
-      downloadProject({
-        docSize,
-        image: imageRef.current ? { ...imageRef.current } : null,
-        textLayers: cloneLayers(layersRef.current),
-        imageLayers: cloneLayers(imageLayersRef.current),
-        shapeLayers: cloneLayers(shapeLayersRef.current),
-        solidLayers: cloneLayers(solidLayersRef.current),
-        order: [...orderRef.current],
-        groups: { ...groupsRef.current },
-      });
-    } catch {
-      setLoadError("Could not save project file");
-    }
+  // تطبيق مشروع كامل على الحالة — مشترك بين "فتح مشروع" واستعادة الحفظ التلقائي.
+  async function applyProject(p: LumenProject, label: string) {
+    setCanvasImage(p.image ? { ...p.image } : null);
+    setBlankMode(!p.image);
+    setTextLayers(cloneLayers(p.textLayers));
+    setImageLayers(cloneLayers(p.imageLayers));
+    setShapeLayers(cloneLayers(p.shapeLayers));
+    setSolidLayers(cloneLayers(p.solidLayers));
+    setLayerOrder([...p.order]);
+    setGroupNames({ ...p.groups });
+    setDocSize({ ...p.docSize });
+    setSelectedTextId(null);
+    setSelectedLayer(null);
+    setSelectedIds([]);
+    setRightTab("layers");
+    setZoom(100);
+    await stageRef.current?.setStrokes([]).catch(() => undefined);
+    pushHistory(label, {
+      image: p.image ? { ...p.image } : null,
+      layers: cloneLayers(p.textLayers),
+      imageLayers: cloneLayers(p.imageLayers),
+      shapeLayers: cloneLayers(p.shapeLayers),
+      solidLayers: cloneLayers(p.solidLayers),
+      order: [...p.order],
+      groups: { ...p.groups },
+    });
   }
 
   function handleOpenProject() {
@@ -1881,30 +2017,7 @@ export default function App() {
         setLoadError(null);
         try {
           const p = await readProjectFile(file);
-          setCanvasImage(p.image ? { ...p.image } : null);
-          setBlankMode(!p.image);
-          setTextLayers(cloneLayers(p.textLayers));
-          setImageLayers(cloneLayers(p.imageLayers));
-          setShapeLayers(cloneLayers(p.shapeLayers));
-          setSolidLayers(cloneLayers(p.solidLayers));
-          setLayerOrder([...p.order]);
-          setGroupNames({ ...p.groups });
-          setDocSize({ ...p.docSize });
-          setSelectedTextId(null);
-          setSelectedLayer(null);
-          setSelectedIds([]);
-          setRightTab("layers");
-          setZoom(100);
-          await stageRef.current?.setStrokes([]).catch(() => undefined);
-          pushHistory(`Open ${file.name}`, {
-            image: p.image ? { ...p.image } : null,
-            layers: cloneLayers(p.textLayers),
-            imageLayers: cloneLayers(p.imageLayers),
-            shapeLayers: cloneLayers(p.shapeLayers),
-            solidLayers: cloneLayers(p.solidLayers),
-            order: [...p.order],
-            groups: { ...p.groups },
-          });
+          await applyProject(p, `Open ${file.name}`);
         } catch (e) {
           setLoadError(e instanceof Error ? e.message : "Could not open project");
         } finally {
@@ -2045,6 +2158,8 @@ export default function App() {
         onOpenProject={handleOpenProject}
         onRemoveBackground={() => void handleRemoveBackground()}
         onMenuAction={handleMenuAction}
+        panelOpen={!rightCollapsed}
+        onTogglePanel={() => setRightCollapsed((v) => !v)}
       />
 
       <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden relative">
@@ -2135,8 +2250,20 @@ export default function App() {
           </div>
         )}
 
-        <Group orientation="horizontal" className="flex-1 min-w-0 min-h-0">
-          <Panel style={{ minWidth: 0, overflow: "hidden" }}>
+        <Group
+          orientation="horizontal"
+          className="flex-1 min-w-0 min-h-0"
+          defaultLayout={panelLayout}
+          onLayoutChanged={(layout) => {
+            // تذكّر حجم اللوحة اليمنى بين الجلسات — النمط الرسمي للمكتبة.
+            try {
+              localStorage.setItem("lumen_panel_layout_v1", JSON.stringify(layout));
+            } catch {
+              /* أفضل جهد */
+            }
+          }}
+        >
+          <Panel id="canvas" style={{ minWidth: 0, overflow: "hidden" }}>
             <Canvas
               ref={stageRef}
               hasImage={canvasImage !== null}
@@ -2157,9 +2284,6 @@ export default function App() {
                   setSelectedLayer({ kind: "text", id });
                   setSelectedIds([id]);
                   setRightTab("design");
-                } else {
-                  setSelectedLayer(null);
-                  setSelectedIds([]);
                 }
               }}
               onAddText={handleAddText}
@@ -2177,7 +2301,10 @@ export default function App() {
               showGrid={showGrid}
               showRulers={showRulers}
               blankMode={blankMode}
-              docLabel={`${docSize.w}×${docSize.h}`}
+              docLabel={`${canvasImage?.width ?? docSize.w}×${canvasImage?.height ?? docSize.h}`}
+              docWidth={canvasImage?.width ?? docSize.w}
+              docHeight={canvasImage?.height ?? docSize.h}
+              onFitScaleChange={setFitScale}
               onBlankAction={handleBlankAction}
               imageLayers={imageLayers}
               shapeLayers={shapeLayers}
@@ -2225,7 +2352,13 @@ export default function App() {
                 />
               </Separator>
 
-              <Panel defaultSize="26" minSize="272px" maxSize="60" style={{ minWidth: 272, overflow: "hidden" }}>
+              <Panel
+                id="inspector"
+                defaultSize="300px"
+                minSize="272px"
+                maxSize="480px"
+                style={{ minWidth: 272, overflow: "hidden" }}
+              >
                 <RightPanel
                   imageId={canvasImage?.imageId}
                   hasImage={canvasImage !== null}
@@ -2273,8 +2406,8 @@ export default function App() {
                   onAlign={handleAlign}
                   onDistribute={handleDistribute}
                   onRename={handleRenameLayer}
-                  docWidth={canvasImage?.width ?? 0}
-                  docHeight={canvasImage?.height ?? 0}
+                  docWidth={canvasImage?.width ?? docSize.w}
+                  docHeight={canvasImage?.height ?? docSize.h}
                   onOpenImage={handleOpen}
                   onNewCanvas={() => setNewCanvasOpen(true)}
                   onShapeTool={() => setActiveTool("shape")}
@@ -2287,103 +2420,6 @@ export default function App() {
           )}
         </Group>
 
-        {rightCollapsed && (
-          <button
-            onClick={() => setRightCollapsed((v) => !v)}
-            title="Show side panel"
-          style={{
-            position: "absolute",
-            top: 10,
-            right: 40,
-            zIndex: 45,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            height: 30,
-            padding: "0 10px 0 8px",
-            borderRadius: 999,
-            cursor: "pointer",
-            border: "1px solid rgba(201,123,74,0.35)",
-            background: "linear-gradient(135deg, #C97B4A 0%, #B86A3A 100%)",
-            color: "#fff",
-            boxShadow: "0 4px 20px rgba(201,123,74,0.45), 0 1px 0 rgba(255,255,255,0.15) inset",
-            backdropFilter: "blur(12px)",
-            transition: "all 260ms cubic-bezier(0.34,1.56,0.64,1)",
-            transform: "scale(1.03)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "scale(1.06)";
-            e.currentTarget.style.boxShadow = "0 6px 28px rgba(201,123,74,0.6), 0 1px 0 rgba(255,255,255,0.2) inset";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "scale(1.03)";
-            e.currentTarget.style.boxShadow = "0 4px 20px rgba(201,123,74,0.45), 0 1px 0 rgba(255,255,255,0.15) inset";
-          }}
-        >
-          <span
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.22)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 11,
-              flexShrink: 0,
-            }}
-          >
-            ◀
-          </span>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
-            Panel
-          </span>
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: "#fff",
-              boxShadow: "0 0 8px rgba(255,255,255,0.9)",
-              animation: "pulseDot 1.6s ease-in-out infinite",
-              flexShrink: 0,
-            }}
-          />
-        </button>
-        )}
-
-        {rightCollapsed && (
-          <div
-            onClick={() => setRightCollapsed(false)}
-            title="Click to show the panel"
-            style={{
-              position: "absolute",
-              top: 0,
-              bottom: 0,
-              right: 28,
-              width: 14,
-              zIndex: 30,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "linear-gradient(90deg, transparent, rgba(201,123,74,0.08))",
-              borderLeft: "1px dashed rgba(201,123,74,0.2)",
-              transition: "all 200ms ease",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLDivElement).style.background = "linear-gradient(90deg, transparent, rgba(201,123,74,0.16))";
-              (e.currentTarget as HTMLDivElement).style.width = "18px";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLDivElement).style.background = "linear-gradient(90deg, transparent, rgba(201,123,74,0.08))";
-              (e.currentTarget as HTMLDivElement).style.width = "14px";
-            }}
-          >
-            <div style={{ width: 2, height: 32, borderRadius: 999, background: "rgba(201,123,74,0.35)" }} />
-          </div>
-        )}
-
         <AgentDock collapsed={agentCollapsed} onToggle={() => setAgentCollapsed((c) => !c)} />
       </div>
 
@@ -2395,6 +2431,8 @@ export default function App() {
         showRulers={showRulers}
         onToggleGrid={() => setShowGrid((v) => !v)}
         onToggleRulers={() => setShowRulers((v) => !v)}
+        onFit={() => setZoom(100)}
+        onActual={() => setZoom(Math.max(10, Math.min(400, Math.round(100 / Math.max(0.01, fitScale)))))}
         saveState={saveState}
         activeTool={toolLabels[activeTool]}
       />
@@ -2443,7 +2481,65 @@ export default function App() {
             setBlendOpen(false);
             await handleBlendConfirm(p);
           }}
+          onPlace={(p) => {
+            setBlendOpen(false);
+            const layer = createImageLayer({ url: p.foregroundUrl, name: p.name, x: p.x, y: p.y, w: p.w, h: p.h });
+            const next = [...imageLayersRef.current, layer];
+            setImageLayers(next);
+            setSelectedLayer({ kind: "image", id: layer.id });
+            setSelectedTextId(null);
+            setSelectedIds([layer.id]);
+            setRightTab("design");
+            pushHistory("Place foreground", { imageLayers: next });
+          }}
         />
+      )}
+
+      {autosaveRestore && (
+        <div
+          onClick={() => {
+            void clearAutosave();
+            setAutosaveRestore(null);
+          }}
+          style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 360, maxWidth: "100%", borderRadius: 12, padding: 18, background: "var(--card)", border: "1px solid var(--border)", boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }}>
+            <h3 style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>Restore autosaved work?</h3>
+            <p style={{ margin: "0 0 14px", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.7 }}>
+              Autosaved {new Date(autosaveRestore.savedAt).toLocaleString()} — restore this draft?
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => {
+                  void clearAutosave();
+                  setAutosaveRestore(null);
+                }}
+                style={{ flex: 1, height: 34, borderRadius: 6, fontSize: 12, cursor: "pointer", background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+              >
+                Discard
+              </button>
+              <button
+                onClick={() => {
+                  const rec = autosaveRestore;
+                  setAutosaveRestore(null);
+                  setBusy("Restoring autosave…");
+                  void (async () => {
+                    try {
+                      await applyProject(parseProject(rec.json), "Restore autosave");
+                    } catch {
+                      setLoadError("Could not restore autosave");
+                    } finally {
+                      setBusy(null);
+                    }
+                  })();
+                }}
+                style={{ flex: 1, height: 34, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", background: "var(--primary)", color: "var(--primary-foreground)", border: "none" }}
+              >
+                Restore
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {notice && (

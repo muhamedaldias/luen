@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uploadImage } from "../lib/api";
 
 export interface BlendParams {
@@ -12,6 +12,15 @@ export interface BlendParams {
   colorMatch: boolean;
 }
 
+export interface BlendPlaceParams {
+  foregroundUrl: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 const MODES = [
   { v: "seamless_normal", label: "Seamless — Normal (Poisson)", hint: "Most accurate insert for matching light — best for products" },
   { v: "seamless_mixed", label: "Seamless — Mixed texture", hint: "Keeps background texture — best for surfaces (wood/fabric)" },
@@ -20,10 +29,11 @@ const MODES = [
   { v: "feather", label: "Soft feather + color match", hint: "Fastest — logo/element composite with soft edges" },
 ];
 
-export default function BlendDialog({ busy = false, hasBackend = false, onClose, onConfirm }: { busy?: boolean; hasBackend?: boolean; onClose: () => void; onConfirm: (p: BlendParams) => void }) {
+export default function BlendDialog({ busy = false, hasBackend = false, onClose, onConfirm, onPlace }: { busy?: boolean; hasBackend?: boolean; onClose: () => void; onConfirm: (p: BlendParams) => void; onPlace?: (p: BlendPlaceParams) => void }) {
   const [fgUrl, setFgUrl] = useState<string | null>(null);
   const [fgId, setFgId] = useState<string | null>(null);
   const [fgName, setFgName] = useState("");
+  const [fgAspect, setFgAspect] = useState(0.75);
   const [mode, setMode] = useState("seamless_normal");
   const [scale, setScale] = useState(40);
   const [x, setX] = useState(50);
@@ -32,6 +42,17 @@ export default function BlendDialog({ busy = false, hasBackend = false, onClose,
   const [colorMatch, setColorMatch] = useState(true);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!fgUrl) return;
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth || 1;
+      const h = img.naturalHeight || 1;
+      if (w > 0 && h > 0) setFgAspect(h / w);
+    };
+    img.src = fgUrl;
+  }, [fgUrl]);
 
   async function pick(file: File | undefined) {
     if (!file) return;
@@ -53,13 +74,17 @@ export default function BlendDialog({ busy = false, hasBackend = false, onClose,
   }
 
   const canGo = !!fgUrl && !uploading && !busy;
+  const fw = Math.max(0.02, Math.min(1, scale / 100));
+  const fh = Math.max(0.02, fw * (fgAspect > 0 ? fgAspect : 0.75));
+  const placeX = Math.max(0, Math.min(Math.max(0, 1 - fw), x / 100 - fw / 2));
+  const placeY = Math.max(0, Math.min(Math.max(0, 1 - fh), y / 100 - fh / 2));
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: "100%", maxHeight: "90vh", overflow: "auto", borderRadius: 12, padding: 18, background: "var(--card)", border: "1px solid var(--border)", boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }}>
         <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>Blend Two Images — High-Quality OpenCV</h3>
         <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.7 }}>
-          The current image is the background. Pick the foreground image, then the best algorithm — all run in float32 and preserve transparency.
+          The current image is the background. Pick the foreground image, position it with the sliders — then either place it as a movable layer (stays editable) or bake it in with the best algorithm.
         </p>
         <button onClick={() => fileRef.current?.click()} style={{ width: "100%", minHeight: 74, borderRadius: 8, cursor: "pointer", background: "var(--secondary)", color: "var(--foreground)", border: "1px dashed var(--border)", fontSize: 12, padding: 10 }}>
           {fgUrl ? (
@@ -91,7 +116,15 @@ export default function BlendDialog({ busy = false, hasBackend = false, onClose,
         </label>
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button onClick={onClose} style={{ flex: 1, height: 34, borderRadius: 6, fontSize: 12, cursor: "pointer", background: "transparent", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}>Cancel</button>
-          <button disabled={!canGo} onClick={() => fgUrl && onConfirm({ foregroundUrl: fgUrl, foregroundId: fgId, mode, scale, x, y, feather, colorMatch })} style={{ flex: 2, height: 34, borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: canGo ? "pointer" : "not-allowed", background: "var(--primary)", color: "var(--primary-foreground)", border: "none", opacity: canGo ? 1 : 0.5 }}>
+          <button
+            disabled={!canGo || !onPlace}
+            onClick={() => fgUrl && onPlace?.({ foregroundUrl: fgUrl, name: fgName.slice(0, 24) || "Foreground", x: placeX, y: placeY, w: fw, h: Math.min(1.2, fh) })}
+            title="Add the foreground as a separate layer at this size and position — stays fully movable, resizable and re-blendable afterward"
+            style={{ flex: 2, height: 34, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: canGo && onPlace ? "pointer" : "not-allowed", background: "var(--secondary)", color: "var(--foreground)", border: "1px solid var(--border)", opacity: canGo ? 1 : 0.5 }}
+          >
+            {busy || uploading ? "Working…" : "Place as movable layer"}
+          </button>
+          <button disabled={!canGo} onClick={() => fgUrl && onConfirm({ foregroundUrl: fgUrl, foregroundId: fgId, mode, scale, x, y, feather, colorMatch })} title="Flatten the foreground into the background with the chosen algorithm — permanent, but undoable" style={{ flex: 2, height: 34, borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: canGo ? "pointer" : "not-allowed", background: "var(--primary)", color: "var(--primary-foreground)", border: "none", opacity: canGo ? 1 : 0.5 }}>
             {busy || uploading ? "Blending…" : "Blend images"}
           </button>
         </div>

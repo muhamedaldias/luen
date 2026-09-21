@@ -8,6 +8,8 @@ interface BottomBarProps {
   showRulers?: boolean;
   onToggleGrid?: () => void;
   onToggleRulers?: () => void;
+  onFit?: () => void;
+  onActual?: () => void;
 }
 
 export default function BottomBar({
@@ -20,9 +22,12 @@ export default function BottomBar({
   showRulers = true,
   onToggleGrid,
   onToggleRulers,
+  onFit,
+  onActual,
 }: BottomBarProps) {
   return (
     <div
+      data-testid="bottom-bar"
       className="flex items-center px-4 gap-5 h-8 shrink-0 select-none"
       style={{
         background: "var(--card)",
@@ -35,6 +40,8 @@ export default function BottomBar({
       <Divider />
       <StatusItem label="Tool" value={activeTool} />
       <div className="flex-1" />
+      <ViewToggle label="Fit" active={false} title="Fit canvas to screen" onClick={onFit} />
+      <ViewToggle label="1:1" active={false} title="Actual size (1:1 pixels)" onClick={onActual} />
       <ViewToggle label="Grid" active={showGrid} title="Toggle grid (G)" onClick={onToggleGrid} />
       <ViewToggle label="Rulers" active={showRulers} title="Toggle rulers (R)" onClick={onToggleRulers} />
       <Divider />

@@ -143,7 +143,7 @@ export default function RightPanel({
       className="flex flex-col h-full w-full overflow-hidden"
       style={{ background: "var(--card)", borderLeft: "1px solid var(--border)", minWidth: 0, overflowWrap: "break-word", containerType: "inline-size" }}
     >
-      <style>{`@container (max-width: 320px) { .rp-tab-label { display: none; } }`}</style>
+      <style>{`@container (max-width: 296px) { .rp-tab-label { display: none; } }`}</style>
       <div
         className="flex items-center gap-0 px-1 pt-1 shrink-0 w-full"
         style={{ borderBottom: "1px solid var(--border)", minWidth: 0, overflowX: "auto" }}
@@ -268,32 +268,24 @@ export default function RightPanel({
 
       <div className="shrink-0 px-3 py-2.5 w-full" style={{ borderTop: "1px solid var(--border)", minWidth: 0 }}>
         {selected && onUpdateText ? (
-          <div style={{ minWidth: 0 }}>
-            <div className="flex items-center justify-between mb-2" style={{ minWidth: 0 }}>
-              <p className="text-xs font-medium truncate" style={{ color: "var(--foreground)", minWidth: 0 }}>
-                {selected.name}
-              </p>
-              <span className="text-xs shrink-0 ml-2" style={{ color: "var(--accent)", fontSize: 10 }}>
-                {Math.round(selected.x * 100)},{Math.round(selected.y * 100)} · {Math.round(selected.rotation)}°
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
-              <MiniNumber label="X%" value={Math.round(selected.x * 100)} onChange={(v) => onUpdateText(selected.id, { x: v / 100 })} />
-              <MiniNumber label="Y%" value={Math.round(selected.y * 100)} onChange={(v) => onUpdateText(selected.id, { y: v / 100 })} />
-              <MiniNumber label="W%" value={Math.round(selected.w * 100)} onChange={(v) => onUpdateText(selected.id, { w: Math.max(5, v) / 100 })} />
-              <MiniNumber label="°" value={Math.round(selected.rotation)} onChange={(v) => onUpdateText(selected.id, { rotation: v })} />
-            </div>
-          </div>
+          <FooterGeometry
+            name={selected.name}
+            x={selected.x} y={selected.y} w={selected.w} rotation={selected.rotation}
+            docW={docWidth} docH={docHeight}
+            onPatch={(p) => onUpdateText(selected.id, p)}
+          />
         ) : selImg && onUpdateImageLayer ? (
           <FooterGeometry
             name={selImg.name}
             x={selImg.x} y={selImg.y} w={selImg.w} rotation={selImg.rotation}
+            docW={docWidth} docH={docHeight}
             onPatch={(p) => onUpdateImageLayer(selImg.id, p as Partial<ImageLayer>)}
           />
         ) : selShape && onUpdateShapeLayer ? (
           <FooterGeometry
             name={selShape.name}
             x={selShape.x} y={selShape.y} w={selShape.w} rotation={selShape.rotation}
+            docW={docWidth} docH={docHeight}
             onPatch={(p) => onUpdateShapeLayer(selShape.id, p as Partial<ShapeLayer>)}
           />
         ) : selSolid ? (
@@ -748,19 +740,70 @@ function InspectorHeader({ icon, typeLabel, name, onRename }: {
   );
 }
 
-function GeometrySection({ x, y, w, h, rotation, onChange }: {
+function GeometryPxSection({ x, y, w, h, rotation, docW, docH, lockable, hideH, onChange }: {
   x: number; y: number; w: number; h: number; rotation: number;
+  docW: number; docH: number; lockable?: boolean; hideH?: boolean;
   onChange: (patch: { x?: number; y?: number; w?: number; h?: number; rotation?: number }) => void;
 }) {
+  const W = Math.max(1, docW);
+  const H = Math.max(1, docH);
+  const [locked, setLocked] = useState(true);
+  const xPx = Math.round(x * W);
+  const yPx = Math.round(y * H);
+  const wPx = Math.max(1, Math.round(w * W));
+  const hPx = Math.max(1, Math.round(h * H));
+  const aspectPx = wPx / Math.max(1, hPx);
+  function setW(px: number) {
+    const cw = Math.max(1, Math.round(px));
+    if (lockable && locked) {
+      const ch = Math.max(1, Math.round(cw / aspectPx));
+      onChange({ w: cw / W, h: ch / H });
+    } else {
+      onChange({ w: cw / W });
+    }
+  }
+  function setH(px: number) {
+    const ch = Math.max(1, Math.round(px));
+    if (lockable && locked) {
+      const cw = Math.max(1, Math.round(ch * aspectPx));
+      onChange({ w: cw / W, h: ch / H });
+    } else {
+      onChange({ h: ch / H });
+    }
+  }
   return (
     <Section title="Position & Size">
-      <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
-        <MiniNumber label="X%" value={Math.round(x * 100)} onChange={(v) => onChange({ x: v / 100 })} />
-        <MiniNumber label="Y%" value={Math.round(y * 100)} onChange={(v) => onChange({ y: v / 100 })} />
-        <MiniNumber label="W%" value={Math.round(w * 100)} onChange={(v) => onChange({ w: Math.max(2, v) / 100 })} />
-        <MiniNumber label="H%" value={Math.round(h * 100)} onChange={(v) => onChange({ h: Math.max(2, v) / 100 })} />
+      <div className="grid grid-cols-2 gap-1.5" data-testid="geom-px" style={{ minWidth: 0 }}>
+        <MiniNumber label="X" value={xPx} onChange={(v) => onChange({ x: v / W })} />
+        <MiniNumber label="Y" value={yPx} onChange={(v) => onChange({ y: v / H })} />
+        <MiniNumber label="W" value={wPx} onChange={setW} />
+        {hideH ? (
+          <MiniNumber label="°" value={Math.round(rotation)} onChange={(v) => onChange({ rotation: Math.max(-180, Math.min(180, Math.round(v))) })} />
+        ) : (
+          <MiniNumber label="H" value={hPx} onChange={setH} />
+        )}
       </div>
-      <SliderRow label="Rotation" value={Math.round(rotation)} min={-180} max={180} onChange={(v) => onChange({ rotation: Math.max(-180, Math.min(180, Math.round(v))) })} suffix="°" />
+      {lockable && (
+        <button
+          onClick={() => setLocked((v) => !v)}
+          title={locked ? "Unlock aspect ratio" : "Lock aspect ratio"}
+          className="flex items-center justify-center gap-1.5 h-8 rounded text-xs mt-1.5 w-full"
+          style={{
+            background: locked ? "rgba(201,123,74,0.12)" : "var(--secondary)",
+            color: locked ? "var(--accent)" : "var(--muted-foreground)",
+            border: locked ? "1px solid rgba(201,123,74,0.4)" : "1px solid var(--border)",
+            cursor: "pointer",
+            fontWeight: locked ? 600 : 400,
+            minWidth: 0,
+          }}
+        >
+          <Lock size={12} strokeWidth={2} />
+          {locked ? "Aspect locked" : "Aspect free"}
+        </button>
+      )}
+      {!hideH && (
+        <SliderRow label="Rotation" value={Math.round(rotation)} min={-180} max={180} onChange={(v) => onChange({ rotation: Math.max(-180, Math.min(180, Math.round(v))) })} suffix="°" />
+      )}
     </Section>
   );
 }
@@ -889,8 +932,9 @@ function DesignInspector(props: {
           onRename={(n) => props.onRename?.(selImg.id, n)}
         />
         <div className="py-2 px-3 w-full" style={{ minWidth: 0 }}>
-          <GeometrySection
+          <GeometryPxSection
             x={selImg.x} y={selImg.y} w={selImg.w} h={selImg.h} rotation={selImg.rotation}
+            docW={props.docWidth} docH={props.docHeight} lockable
             onChange={(p) => up({
               ...(p.x !== undefined ? { x: p.x } : {}),
               ...(p.y !== undefined ? { y: p.y } : {}),
@@ -957,8 +1001,9 @@ function DesignInspector(props: {
               ))}
             </div>
           </Section>
-          <GeometrySection
+          <GeometryPxSection
             x={selShape.x} y={selShape.y} w={selShape.w} h={selShape.h} rotation={selShape.rotation}
+            docW={props.docWidth} docH={props.docHeight} lockable
             onChange={(p) => up({
               ...(p.x !== undefined ? { x: p.x } : {}),
               ...(p.y !== undefined ? { y: p.y } : {}),
@@ -972,6 +1017,16 @@ function DesignInspector(props: {
             <ToggleLine label="Fill on" value={selShape.fillEnabled} onChange={(v) => up({ fillEnabled: v })} />
             <ColorRow label="Stroke" value={selShape.strokeColor} onChange={(v) => up({ strokeColor: v })} />
             <SliderRow label="Stroke width" value={selShape.strokeWidth} min={0} max={24} onChange={(v) => up({ strokeWidth: Math.round(v) })} suffix="px" />
+            {selShape.shape === "rect" && (
+              <SliderRow
+                label="Corner radius"
+                value={Math.round((selShape.radius ?? 0) * Math.max(1, props.docWidth))}
+                min={0}
+                max={Math.max(8, Math.round(Math.min(Math.max(1, props.docWidth), Math.max(1, props.docHeight)) / 4))}
+                onChange={(v) => up({ radius: v / Math.max(1, props.docWidth) })}
+                suffix="px"
+              />
+            )}
           </Section>
           <Section title="Appearance">
             <SliderRow label="Opacity" value={selShape.opacity} min={0} max={100} onChange={(v) => up({ opacity: Math.round(v) })} suffix="%" />
@@ -1048,6 +1103,8 @@ function DesignInspector(props: {
           blendValue={(selected as { blendMode?: string } | null)?.blendMode ?? "source-over"}
           onBlendChange={(v) => props.onBlendChange?.(selected.id, v)}
           arrange={props.onMoveLayer ? (d) => props.onMoveLayer!(selected.id, d) : undefined}
+          docW={props.docWidth}
+          docH={props.docHeight}
         />
       </div>
     );
@@ -1076,6 +1133,8 @@ function DesignTab({
   blendValue,
   onBlendChange,
   arrange,
+  docW,
+  docH,
 }: {
   layer: TextLayer | null;
   onUpdateText?: (id: string, patch: Partial<TextLayer>) => void;
@@ -1087,6 +1146,8 @@ function DesignTab({
   blendValue?: string;
   onBlendChange?: (v: string) => void;
   arrange?: (d: "front" | "back" | "forward" | "backward") => void;
+  docW: number;
+  docH: number;
 }) {
   if (!layer || !onUpdateText) {
     return (
@@ -1125,15 +1186,16 @@ function DesignTab({
         />
       </Section>
 
-      <Section title="Position & Size">
-        <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
-          <MiniNumber label="X%" value={Math.round(layer.x * 100)} onChange={(v) => up({ x: v / 100 })} />
-          <MiniNumber label="Y%" value={Math.round(layer.y * 100)} onChange={(v) => up({ y: v / 100 })} />
-          <MiniNumber label="W%" value={Math.round(layer.w * 100)} onChange={(v) => up({ w: Math.max(5, v) / 100 })} />
-          <MiniNumber label="↻°" value={Math.round(layer.rotation)} onChange={(v) => up({ rotation: Math.max(-180, Math.min(180, v)) })} />
-        </div>
-        <SliderRow label="Rotation" value={layer.rotation} min={-180} max={180} onChange={(v) => up({ rotation: Math.round(v) })} suffix="°" />
-      </Section>
+      <GeometryPxSection
+        x={layer.x} y={layer.y} w={layer.w} h={0.12} rotation={layer.rotation}
+        docW={docW} docH={docH} hideH
+        onChange={(p) => up({
+          ...(p.x !== undefined ? { x: p.x } : {}),
+          ...(p.y !== undefined ? { y: p.y } : {}),
+          ...(p.w !== undefined ? { w: Math.max(0.05, p.w) } : {}),
+          ...(p.rotation !== undefined ? { rotation: p.rotation } : {}),
+        })}
+      />
 
       <Section title="Typography">
         <label className="text-xs block mb-1" style={{ color: "var(--muted-foreground)" }}>Font family</label>
@@ -1772,7 +1834,7 @@ function ComparisonStrip() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="py-2.5 w-full" style={{ borderBottom: "1px solid var(--border)", minWidth: 0 }}>
-      <p className="font-semibold mb-2 tracking-wide" style={{ color: "var(--muted-foreground)", fontSize: 11, letterSpacing: "0.08em" }}>
+      <p className="font-semibold mb-2 tracking-wide" style={{ color: "var(--muted-foreground)", fontSize: 12, letterSpacing: "0.06em" }}>
         {title.toUpperCase()}
       </p>
       <div className="flex flex-col gap-1.5 w-full" style={{ minWidth: 0 }}>{children}</div>
@@ -1929,8 +1991,8 @@ function ToggleBtn({ active, onClick, label, children }: { active: boolean; onCl
 function MiniNumber({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
     <div className="flex items-center gap-1" style={{ minWidth: 0 }}>
-      <span className="shrink-0 text-center" style={{ color: "var(--muted-foreground)", width: 28, fontSize: 11 }}>{label}</span>
-      <div className="flex flex-1 items-center rounded" style={{ background: "var(--secondary)", border: "1px solid var(--border)", height: 30, paddingLeft: 8, paddingRight: 8, minWidth: 0 }}>
+      <span className="shrink-0 text-center" style={{ color: "var(--muted-foreground)", width: 30, fontSize: 12 }}>{label}</span>
+      <div className="flex flex-1 items-center rounded" style={{ background: "var(--secondary)", border: "1px solid var(--border)", height: 32, paddingLeft: 8, paddingRight: 8, minWidth: 0 }}>
         <input
           type="number"
           value={value}
@@ -1980,22 +2042,25 @@ function Slider({ min, max, value, step = 1, onChange }: { min: number; max: num
   );
 }
 
-function FooterGeometry({ name, x, y, w, rotation, onPatch }: {
+function FooterGeometry({ name, x, y, w, rotation, docW, docH, onPatch }: {
   name: string; x: number; y: number; w: number; rotation: number;
+  docW: number; docH: number;
   onPatch: (p: { x?: number; y?: number; w?: number; rotation?: number }) => void;
 }) {
+  const W = Math.max(1, docW);
+  const H = Math.max(1, docH);
   return (
     <div style={{ minWidth: 0 }}>
       <div className="flex items-center justify-between mb-2" style={{ minWidth: 0 }}>
         <p className="text-xs font-medium truncate" style={{ color: "var(--foreground)", minWidth: 0 }}>{name}</p>
-        <span className="text-xs shrink-0 ml-2" style={{ color: "var(--accent)", fontSize: 10 }}>
-          {Math.round(x * 100)},{Math.round(y * 100)} · {Math.round(rotation)}°
+        <span className="text-xs shrink-0 ml-2 tabular-nums" style={{ color: "var(--accent)", fontSize: 11 }}>
+          {Math.round(x * W)},{Math.round(y * H)} · {Math.round(rotation)}°
         </span>
       </div>
       <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
-        <MiniNumber label="X%" value={Math.round(x * 100)} onChange={(v) => onPatch({ x: v / 100 })} />
-        <MiniNumber label="Y%" value={Math.round(y * 100)} onChange={(v) => onPatch({ y: v / 100 })} />
-        <MiniNumber label="W%" value={Math.round(w * 100)} onChange={(v) => onPatch({ w: Math.max(2, v) / 100 })} />
+        <MiniNumber label="X" value={Math.round(x * W)} onChange={(v) => onPatch({ x: v / W })} />
+        <MiniNumber label="Y" value={Math.round(y * H)} onChange={(v) => onPatch({ y: v / H })} />
+        <MiniNumber label="W" value={Math.round(w * W)} onChange={(v) => onPatch({ w: Math.max(2, v) / W })} />
         <MiniNumber label="°" value={Math.round(rotation)} onChange={(v) => onPatch({ rotation: Math.max(-180, Math.min(180, Math.round(v))) })} />
       </div>
     </div>

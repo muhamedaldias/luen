@@ -47,6 +47,9 @@ interface CanvasProps {
   blankMode?: boolean;
   docLabel?: string;
   onBlankAction?: (a: "text" | "shape" | "image" | "background" | "new") => void;
+  docWidth?: number;
+  docHeight?: number;
+  onFitScaleChange?: (fit: number) => void;
 }
 
 export interface FabricStageHandle {
@@ -75,6 +78,7 @@ const TOOL_CURSORS: Record<string, string> = {
 
 const BRUSH_COLOR = "#C97B4A";
 const BRUSH_SIZE = 4;
+const ERASER_DIA = 36;
 const BOARD_W = 900;
 const BOARD_H = 600;
 const RULER = 22;
@@ -269,13 +273,22 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     blankMode = false,
     docLabel = "",
     onBlankAction,
+    docWidth = 1200,
+    docHeight = 800,
+    onFitScaleChange,
   } = props;
 
   const [draggingOver, setDraggingOver] = useState(false);
   const [imgError, setImgError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [boardBox, setBoardBox] = useState({ x: 0, y: 0, w: 0, h: 0 });
+  const [fitScale, setFitScale] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const docSizeRef = useRef({ w: docWidth, h: docHeight });
+  docSizeRef.current = {
+    w: Number.isFinite(docWidth) && docWidth > 0 ? docWidth : 1200,
+    h: Number.isFinite(docHeight) && docHeight > 0 ? docHeight : 800,
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const elRef = useRef<HTMLCanvasElement>(null);
@@ -309,14 +322,15 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     shapeDraw: null,
   });
   const erasing = useRef({ active: false, dirty: false });
+  const eraseSession = useRef<{ el: HTMLCanvasElement; ctx: CanvasRenderingContext2D; lastX: number; lastY: number } | null>(null);
   const lastCommitted = useRef<string | null>(null);
   const toolRef = useRef(activeTool);
   const zoomRef = useRef(zoom);
   toolRef.current = activeTool;
   zoomRef.current = zoom;
 
-  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect });
-  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect };
+  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange });
+  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange };
   const quickBrushRef = useRef(quickBrush);
   quickBrushRef.current = quickBrush;
   const quickDrag = useRef<{ active: boolean; seeds: Array<{ x: number; y: number }>; subtract: boolean }>({ active: false, seeds: [], subtract: false });
@@ -446,15 +460,17 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     fc.setHeight(r.height);
     fc.calcOffset();
     const v = viewRef.current;
-    const pad = 28;
-    let bw = BOARD_W;
-    let bh = BOARD_H;
+    const pad = Math.round(Math.max(20, Math.min(40, Math.min(r.width, r.height) * 0.045)));
+    let bw = docSizeRef.current.w;
+    let bh = docSizeRef.current.h;
     if (bgRef.current && v.natW > 0 && v.natH > 0) {
       bw = v.natW;
       bh = v.natH;
     }
     const fit = Math.min((r.width - pad * 2) / bw, (r.height - pad * 2) / bh);
     const s = Math.max(0.01, fit);
+    setFitScale(s);
+    handlersRef.current.onFitScaleChange?.(s);
     const dw = bw * s;
     const dh = bh * s;
     v.box = { x: (r.width - dw) / 2, y: (r.height - dh) / 2, w: dw, h: dh };
@@ -691,7 +707,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             if (s.shape === "ellipse" && obj instanceof Ellipse) {
               obj.set({ rx: wpx / 2, ry: hpx / 2 } as never);
             } else if (obj instanceof Rect) {
-              obj.set({ width: wpx, height: hpx } as never);
+              const rad = s.shape === "rect" ? Math.max(0, Math.min((s.radius ?? 0) * box.w, wpx / 2, hpx / 2)) : 0;
+              obj.set({ width: wpx, height: hpx, rx: rad, ry: rad } as never);
             }
             obj.set({ fill: s.fillEnabled ? s.color : "transparent", stroke: s.strokeWidth > 0 ? s.strokeColor : "transparent", strokeWidth: s.strokeWidth || 0 } as never);
           } else if (obj instanceof Line) {
@@ -940,26 +957,101 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     if (url) handlersRef.current.onEditCommit?.(url);
   }, [commitRaster]);
 
-  function eraseAt(clientX: number, clientY: number): boolean {
-    const fc = fRef.current;
-    if (!fc) return false;
+  function eraseNatural(clientX: number, clientY: number): { nx: number; ny: number } | null {
+    const natW = viewRef.current.natW;
+    const natH = viewRef.current.natH;
+    if (natW < 2 || natH < 2) return null;
     const p = toStage(clientX, clientY);
-    const pad = 14;
-    let removed = false;
-    const strokes = fc.getObjects().filter((o) => (o as unknown as Record<string, unknown>).isStroke);
-    for (const s of strokes) {
+    const box = viewRef.current.box;
+    return {
+      nx: ((p.x - box.x) / Math.max(1, box.w)) * natW,
+      ny: ((p.y - box.y) / Math.max(1, box.h)) * natH,
+    };
+  }
+
+  function eraseDab(nx: number, ny: number): boolean {
+    const session = eraseSession.current;
+    const natW = viewRef.current.natW;
+    const natH = viewRef.current.natH;
+    if (!session) return false;
+    const r = ERASER_DIA / 2;
+    if (nx < -r || nx > natW + r || ny < -r || ny > natH + r) return false;
+    const ctx = session.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    ctx.arc(nx, ny, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    const fc = fRef.current;
+    const bg = bgRef.current;
+    if (fc && bg) {
       try {
-        const r = s.getBoundingRect();
-        if (p.x >= r.left - pad && p.x <= r.left + r.width + pad && p.y >= r.top - pad && p.y <= r.top + r.height + pad) {
-          fc.remove(s);
-          removed = true;
-        }
+        bg.setElement(session.el);
+        bg.setCoords();
+        fc.requestRenderAll();
       } catch {
-        /* تجاهل */
+        return false;
       }
     }
-    if (removed) fc.requestRenderAll();
-    return removed;
+    return true;
+  }
+
+  function eraseStrokeTo(nx: number, ny: number): boolean {
+    const session = eraseSession.current;
+    if (!session) return false;
+    const dx = nx - session.lastX;
+    const dy = ny - session.lastY;
+    const dist = Math.hypot(dx, dy);
+    const step = Math.max(6, ERASER_DIA / 4);
+    const n = Math.max(1, Math.min(128, Math.floor(dist / step)));
+    let ok = false;
+    for (let i = 1; i <= n; i++) {
+      if (eraseDab(session.lastX + (dx * i) / n, session.lastY + (dy * i) / n)) ok = true;
+    }
+    session.lastX = nx;
+    session.lastY = ny;
+    return ok;
+  }
+
+  function eraseBegin(clientX: number, clientY: number): boolean {
+    const bg = bgRef.current;
+    const natW = viewRef.current.natW;
+    const natH = viewRef.current.natH;
+    if (!hasImageRef.current || !bg || natW < 2 || natH < 2) {
+      showToast("Open an image first — then erase");
+      return false;
+    }
+    const start = eraseNatural(clientX, clientY);
+    if (!start) return false;
+    try {
+      const el = document.createElement("canvas");
+      el.width = Math.round(natW);
+      el.height = Math.round(natH);
+      const ctx = el.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return false;
+      ctx.drawImage(bg.getElement() as CanvasImageSource, 0, 0, el.width, el.height);
+      eraseSession.current = { el, ctx, lastX: start.nx, lastY: start.ny };
+    } catch {
+      eraseSession.current = null;
+      return false;
+    }
+    erasing.current = { active: true, dirty: false };
+    if (eraseDab(start.nx, start.ny)) erasing.current.dirty = true;
+    return true;
+  }
+
+  function commitErase(): void {
+    const session = eraseSession.current;
+    eraseSession.current = null;
+    if (!session) return;
+    try {
+      const url = session.el.toDataURL("image/png");
+      lastCommitted.current = url;
+      handlersRef.current.onEditCommit?.(url);
+    } catch {
+      showToast("Could not apply eraser");
+    }
   }
 
   function pickColor(clientX: number, clientY: number) {
@@ -1229,8 +1321,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         return;
       }
       if (tool === "eraser") {
-        erasing.current = { active: true, dirty: false };
-        if (eraseAt(e.clientX, e.clientY)) erasing.current.dirty = true;
+        eraseBegin(e.clientX, e.clientY);
       }
     };
 
@@ -1277,7 +1368,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         return;
       }
       if (erasing.current.active && toolRef.current === "eraser") {
-        if (eraseAt(e.clientX, e.clientY)) erasing.current.dirty = true;
+        const pt = eraseNatural(e.clientX, e.clientY);
+        if (pt && eraseStrokeTo(pt.nx, pt.ny)) erasing.current.dirty = true;
       }
       if (quickDrag.current.active && toolRef.current === "quick-select") {
         const q = quickDrag.current;
@@ -1398,7 +1490,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       if (erasing.current.active) {
         const dirty = erasing.current.dirty;
         erasing.current = { active: false, dirty: false };
-        if (dirty) void commitStrokes();
+        if (dirty) commitErase();
+        else eraseSession.current = null;
       }
     };
 
@@ -1913,6 +2006,10 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   function resetZoom() {
     onZoomChange?.(100);
   }
+  const actualZoom = Math.max(10, Math.min(400, Math.round(100 / Math.max(0.01, fitScale))));
+  function goActualSize() {
+    onZoomChange?.(actualZoom);
+  }
 
   const status = busy || error || toast || imgError;
   const cursor = TOOL_CURSORS[activeTool] ?? "default";
@@ -1934,9 +2031,51 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     >
       {isDocEmpty && <GridTexture />}
 
+      {boardBox.w > 10 && (
+        <div
+          data-testid="artboard-frame"
+          style={{
+            position: "absolute",
+            left: boardBox.x,
+            top: boardBox.y,
+            width: boardBox.w,
+            height: boardBox.h,
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
+            pointerEvents: "none",
+          }}
+        />
+      )}
       <div ref={containerRef} style={{ position: "absolute", inset: 0, overflow: "hidden", touchAction: "none" }}>
         <canvas ref={elRef} style={{ display: "block" }} />
       </div>
+
+      {boardBox.w > 10 && (
+        <div
+          style={{
+            position: "absolute",
+            left: boardBox.x,
+            top: Math.max(2, boardBox.y - 22),
+            height: 18,
+            display: "flex",
+            alignItems: "center",
+            padding: "0 8px",
+            borderRadius: 4,
+            background: "var(--secondary)",
+            border: "1px solid var(--border)",
+            color: "var(--muted-foreground)",
+            fontSize: 10,
+            fontVariantNumeric: "tabular-nums",
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+            zIndex: 5,
+          }}
+        >
+          {docLabel || "Canvas"}
+        </div>
+      )}
 
       {showGrid && boardBox.w > 10 && (
         <div
@@ -2115,7 +2254,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           }}
         >
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
-          {activeTool} · fabric engine {activeTool === "text" ? "— click canvas to add text · drag to move · double-click to edit" : activeTool === "brush" ? "— drag to paint" : activeTool === "eraser" ? "— drag over strokes to erase" : activeTool === "select" ? "— click text to select · arrows nudge · Del deletes" : ""}
+          {activeTool} · fabric engine {activeTool === "text" ? "— click canvas to add text · drag to move · double-click to edit" : activeTool === "brush" ? "— drag to paint" : activeTool === "eraser" ? "— drag over the image to erase to transparency" : activeTool === "select" ? "— click text to select · arrows nudge · Del deletes" : ""}
         </div>
       )}
 
@@ -2152,12 +2291,38 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             cursor: "pointer",
           }}
           onClick={resetZoom}
-          title="Reset zoom"
+          title="Fit to screen"
         >
           {zoom}%
         </button>
         <ZoomControlBtn icon={<ZoomIn size={13} strokeWidth={2} />} onClick={zoomIn} label="Zoom in" />
         <div style={{ width: 1, height: 16, margin: "0 2px", background: "var(--border)" }} />
+        <button
+          style={{
+            padding: "0 8px",
+            height: 28,
+            fontSize: 11,
+            fontWeight: 600,
+            fontVariantNumeric: "tabular-nums",
+            color: "var(--muted-foreground)",
+            textAlign: "center",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+          }}
+          onClick={goActualSize}
+          title={`Actual size 1:1 (${actualZoom}%)`}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "var(--foreground)";
+            e.currentTarget.style.background = "var(--secondary)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "var(--muted-foreground)";
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          1:1
+        </button>
         <ZoomControlBtn icon={<Maximize2 size={12} strokeWidth={2} />} onClick={resetZoom} label="Fit to screen" />
       </div>
     </div>
