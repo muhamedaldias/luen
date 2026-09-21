@@ -48,8 +48,6 @@ export async function exportFlattenedDataUrl(opts: FlattenOpts): Promise<string>
   canvas.height = H;
   const ctx = canvas.getContext("2d")!;
   if (!ctx) throw new Error("no ctx");
-  ctx.fillStyle = "#0F0E0D";
-  ctx.fillRect(0, 0, W, H);
   if (baseImg) {
     ctx.drawImage(baseImg, 0, 0, W, H);
   } else {

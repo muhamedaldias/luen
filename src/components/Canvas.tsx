@@ -29,6 +29,7 @@ interface CanvasProps {
   onMagicWandSelect?: (px: number, py: number, add: boolean, subtract: boolean) => void;
   onQuickSelect?: (seeds: Array<{ x: number; y: number }>, mode: "add" | "subtract") => void;
   quickBrush?: number;
+  eraserSize?: number;
   imageLayers?: ImageLayer[];
   shapeLayers?: ShapeLayer[];
   solidLayers?: SolidLayer[];
@@ -70,7 +71,7 @@ const TOOL_CURSORS: Record<string, string> = {
   "smart-select": "crosshair",
   "magic-wand": "crosshair",
   "quick-select": "crosshair",
-  eraser: "cell",
+  eraser: "none",
   eyedropper: "copy",
   pan: "grab",
   zoom: "zoom-in",
@@ -78,7 +79,6 @@ const TOOL_CURSORS: Record<string, string> = {
 
 const BRUSH_COLOR = "#C97B4A";
 const BRUSH_SIZE = 4;
-const ERASER_DIA = 36;
 const BOARD_W = 900;
 const BOARD_H = 600;
 const RULER = 22;
@@ -258,6 +258,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   onMagicWandSelect,
   onQuickSelect,
   quickBrush = 40,
+  eraserSize = 36,
     imageLayers = [],
     shapeLayers = [],
     solidLayers = [],
@@ -282,6 +283,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   const [imgError, setImgError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [boardBox, setBoardBox] = useState({ x: 0, y: 0, w: 0, h: 0 });
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0, inside: false });
   const [fitScale, setFitScale] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docSizeRef = useRef({ w: docWidth, h: docHeight });
@@ -333,6 +335,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange };
   const quickBrushRef = useRef(quickBrush);
   quickBrushRef.current = quickBrush;
+  const eraserSizeRef = useRef(eraserSize);
+  eraserSizeRef.current = eraserSize;
   const quickDrag = useRef<{ active: boolean; seeds: Array<{ x: number; y: number }>; subtract: boolean }>({ active: false, seeds: [], subtract: false });
   const shapeKindRef = useRef(shapeKind);
   shapeKindRef.current = shapeKind;
@@ -974,7 +978,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     const natW = viewRef.current.natW;
     const natH = viewRef.current.natH;
     if (!session) return false;
-    const r = ERASER_DIA / 2;
+    const r = eraserSizeRef.current / 2;
     if (nx < -r || nx > natW + r || ny < -r || ny > natH + r) return false;
     const ctx = session.ctx;
     ctx.save();
@@ -1003,7 +1007,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     const dx = nx - session.lastX;
     const dy = ny - session.lastY;
     const dist = Math.hypot(dx, dy);
-    const step = Math.max(6, ERASER_DIA / 4);
+    const step = Math.max(6, eraserSizeRef.current / 4);
     const n = Math.max(1, Math.min(128, Math.floor(dist / step)));
     let ok = false;
     for (let i = 1; i <= n; i++) {
@@ -2013,6 +2017,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
 
   const status = busy || error || toast || imgError;
   const cursor = TOOL_CURSORS[activeTool] ?? "default";
+  const eraserDia = eraserSize * (viewRef.current.box.w / Math.max(1, viewRef.current.natW));
   const isDocEmpty =
     !hasImage &&
     textLayers.length === 0 &&
@@ -2028,6 +2033,17 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onContextMenu={(e) => e.preventDefault()}
+      onMouseMove={(e) => {
+        if (activeTool !== "eraser") {
+          if (cursorPos.inside) setCursorPos((p) => ({ ...p, inside: false }));
+          return;
+        }
+        const r = e.currentTarget.getBoundingClientRect();
+        setCursorPos({ x: e.clientX - r.left, y: e.clientY - r.top, inside: true });
+      }}
+      onMouseLeave={() => {
+        if (cursorPos.inside) setCursorPos((p) => ({ ...p, inside: false }));
+      }}
     >
       {isDocEmpty && <GridTexture />}
 
@@ -2040,7 +2056,9 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             top: boardBox.y,
             width: boardBox.w,
             height: boardBox.h,
-            background: "var(--card)",
+            backgroundColor: "var(--card)",
+            backgroundImage: "repeating-conic-gradient(var(--border) 0% 25%, transparent 0% 50%)",
+            backgroundSize: "16px 16px",
             border: "1px solid var(--border)",
             borderRadius: 4,
             boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
@@ -2051,6 +2069,23 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       <div ref={containerRef} style={{ position: "absolute", inset: 0, overflow: "hidden", touchAction: "none" }}>
         <canvas ref={elRef} style={{ display: "block" }} />
       </div>
+      {activeTool === "eraser" && cursorPos.inside && boardBox.w > 10 && (
+        <div
+          data-testid="eraser-cursor-ring"
+          style={{
+            position: "absolute",
+            left: cursorPos.x - eraserDia / 2,
+            top: cursorPos.y - eraserDia / 2,
+            width: Math.max(2, eraserDia),
+            height: Math.max(2, eraserDia),
+            borderRadius: "50%",
+            border: "1.5px solid var(--foreground)",
+            boxShadow: "0 0 0 1.5px var(--background)",
+            pointerEvents: "none",
+            zIndex: 6,
+          }}
+        />
+      )}
 
       {boardBox.w > 10 && (
         <div

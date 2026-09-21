@@ -137,6 +137,7 @@ export default function App() {
   const [wandContiguous, setWandContiguous] = useState(true);
   const [wandBusy, setWandBusy] = useState(false);
   const [quickBrush, setQuickBrush] = useState(40);
+  const [eraserSize, setEraserSize] = useState(36);
   const [quickTolerance, setQuickTolerance] = useState(32);
   const [quickBusy, setQuickBusy] = useState(false);
   const [layerOrder, setLayerOrder] = useState<LayerRef[]>([]);
@@ -176,6 +177,7 @@ export default function App() {
   const wandToleranceRef = useRef(32);
   const wandContiguousRef = useRef(true);
   const quickBrushRef = useRef(40);
+  const eraserSizeRef = useRef(36);
   const quickToleranceRef = useRef(32);
   const activeToolRef = useRef<ToolId>("select");
   const shapeKindRef = useRef<"rect" | "ellipse">("rect");
@@ -205,6 +207,9 @@ export default function App() {
   useEffect(() => {
     quickBrushRef.current = quickBrush;
   }, [quickBrush]);
+  useEffect(() => {
+    eraserSizeRef.current = Math.max(2, Math.min(200, Math.round(eraserSize)));
+  }, [eraserSize]);
   useEffect(() => {
     quickToleranceRef.current = quickTolerance;
   }, [quickTolerance]);
@@ -450,6 +455,8 @@ export default function App() {
         void downloadCurrentImage("export.png");
         return;
       }
+      if (k === "[" || (e.code === "BracketLeft" && !mod)) { setEraserSize((v) => Math.max(2, v - 4)); return; }
+      if (k === "]" || (e.code === "BracketRight" && !mod)) { setEraserSize((v) => Math.min(200, v + 4)); return; }
       if (mod) return;
       if (k === "v") setActiveTool("select");
       else if (k === "w") setActiveTool("smart-select");
@@ -2250,6 +2257,41 @@ export default function App() {
           </div>
         )}
 
+        {activeTool === "eraser" && (
+          <div
+            style={{
+              position: "absolute",
+              left: 64,
+              bottom: 48,
+              zIndex: 50,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              padding: "10px 14px",
+              borderRadius: 8,
+              minWidth: 220,
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            }}
+          >
+            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>
+              Eraser size: {eraserSize}px
+              <input
+                type="range"
+                min={2}
+                max={200}
+                value={eraserSize}
+                onChange={(e) => setEraserSize(Math.max(2, Math.min(200, Math.round(Number(e.target.value)))))}
+                style={{ width: "100%", accentColor: "var(--accent)" }}
+              />
+            </label>
+            <div style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
+              Drag to erase to transparency · [ ] = size (E)
+            </div>
+          </div>
+        )}
+
         <Group
           orientation="horizontal"
           className="flex-1 min-w-0 min-h-0"
@@ -2296,6 +2338,7 @@ export default function App() {
               onMagicWandSelect={(px, py, add, subtract) => void handleMagicWandPick(px, py, add, subtract)}
               onQuickSelect={(seeds, mode) => void handleQuickSelectFinish(seeds, mode)}
               quickBrush={quickBrush}
+              eraserSize={eraserSize}
               shapeKind={shapeKind}
               onShapeDraw={handleShapeDraw}
               showGrid={showGrid}
