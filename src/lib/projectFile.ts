@@ -13,6 +13,10 @@ export interface LumenProject {
   version: 1;
   docSize: { w: number; h: number };
   image: CanvasImage | null;
+  /** الصورة الأساسية قبل أول خلفية — الخلفية الجديدة تستبدل القديمة تحتها. */
+  baseBeforeBackdrop?: CanvasImage | null;
+  /** هل الصورة الحالية خلفية مجردة بلا أي محتوى فوقها؟ */
+  pureBackdrop?: boolean;
   textLayers: TextLayer[];
   imageLayers: ImageLayer[];
   shapeLayers: ShapeLayer[];
@@ -71,11 +75,21 @@ export function parseProject(json: string): LumenProject {
         height: Math.round(Number(raw.image.height) || 0),
       }
     : null;
+  const baseBeforeBackdrop = isRecord(raw.baseBeforeBackdrop) && typeof raw.baseBeforeBackdrop.url === "string"
+    ? {
+        url: raw.baseBeforeBackdrop.url as string,
+        imageId: typeof raw.baseBeforeBackdrop.imageId === "string" ? (raw.baseBeforeBackdrop.imageId as string) : null,
+        width: Math.round(Number(raw.baseBeforeBackdrop.width) || 0),
+        height: Math.round(Number(raw.baseBeforeBackdrop.height) || 0),
+      }
+    : null;
   return {
     app: "lumen",
     version: 1,
     docSize,
     image,
+    baseBeforeBackdrop,
+    pureBackdrop: raw.pureBackdrop === true,
     textLayers: cleanMasks(asArray<TextLayer>(raw.textLayers)),
     imageLayers: cleanMasks(asArray<ImageLayer>(raw.imageLayers)),
     shapeLayers: cleanMasks(asArray<ShapeLayer>(raw.shapeLayers)),

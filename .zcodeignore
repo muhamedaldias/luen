@@ -1,0 +1,110 @@
+# Node / Frontend dependencies & builds
+node_modules/
+dist/
+build/
+.cache/
+.vite/
+vite.config.*.timestamp-*
+*.tsbuildinfo
+*-debug.log*
+logs/
+*.log
+.claude-replay.*
+.tmp-*
+
+# Environment variables & secrets
+.env*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Python / Backend artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+backend/*.db
+backend/storage/
+storage/
+backend/alembic/versions/*.pyc
+
+# Python virtual environments
+.venv/
+backend/.venv/
+env/
+venv/
+ENV/
+
+# Rust / Tauri builds
+src-tauri/target/
+src-tauri/binaries/
+
+# Agent & temporary session caches (Do NOT commit to git)
+.omo/
+.codegraph/
+.playwright-mcp/
+.qa-libs/
+qa-wheels/
+/.plugins/
+/.opencode-skills/
+/.figma/design-context/
+
+# Scratch files, test captures & dumps
+gl.json
+pw.json
+pyee.json
+gls.html
+pe.html
+te.html
+pickpyee.py
+pickurls.py
+pickwheels.py
+qa-capture.py
+qa-dump.py
+readhead.py
+readmeta.py
+te_pick.py
+playwright.install.log
+tests/visual-qa-shots/
+
+# Operating System & IDE artifacts
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+site-packages/
+coverage/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

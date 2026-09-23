@@ -76,6 +76,92 @@ export const FONT_OPTIONS: { value: string; label: string }[] = [
   { value: "Impact, Haettenschweiler, sans-serif", label: "Impact" },
 ];
 
+/** مكتبة الخطوط المضمنة (Google Fonts) مقسمة حسب الفئة — تُحمّل دفعة واحدة في index.css. */
+export const FONT_LIBRARY: { category: string; fonts: { value: string; label: string }[] }[] = [
+  {
+    category: "Arabic · عربي",
+    fonts: [
+      { value: "'Cairo', sans-serif", label: "Cairo" },
+      { value: "'Tajawal', sans-serif", label: "Tajawal" },
+      { value: "'Almarai', sans-serif", label: "Almarai" },
+      { value: "'IBM Plex Sans Arabic', sans-serif", label: "IBM Plex Sans Arabic" },
+      { value: "'Reem Kufi', sans-serif", label: "Reem Kufi" },
+      { value: "Amiri, serif", label: "Amiri" },
+      { value: "'Noto Kufi Arabic', sans-serif", label: "Noto Kufi Arabic" },
+    ],
+  },
+  {
+    category: "Sans",
+    fonts: [
+      { value: "Inter, system-ui, sans-serif", label: "Inter" },
+      { value: "'Poppins', sans-serif", label: "Poppins" },
+      { value: "'Montserrat', sans-serif", label: "Montserrat" },
+      { value: "'Nunito Sans', sans-serif", label: "Nunito Sans" },
+      { value: "'Work Sans', sans-serif", label: "Work Sans" },
+      { value: "'Manrope', sans-serif", label: "Manrope" },
+      { value: "'DM Sans', sans-serif", label: "DM Sans" },
+      { value: "Roboto, sans-serif", label: "Roboto" },
+      { value: "'Open Sans', sans-serif", label: "Open Sans" },
+      { value: "Lato, sans-serif", label: "Lato" },
+    ],
+  },
+  {
+    category: "Serif",
+    fonts: [
+      { value: "'Playfair Display', serif", label: "Playfair Display" },
+      { value: "Merriweather, serif", label: "Merriweather" },
+      { value: "Lora, serif", label: "Lora" },
+      { value: "'Libre Baskerville', serif", label: "Libre Baskerville" },
+      { value: "'Cormorant Garamond', serif", label: "Cormorant Garamond" },
+      { value: "'PT Serif', serif", label: "PT Serif" },
+    ],
+  },
+  {
+    category: "Display",
+    fonts: [
+      { value: "'Bebas Neue', sans-serif", label: "Bebas Neue" },
+      { value: "Anton, sans-serif", label: "Anton" },
+      { value: "Oswald, sans-serif", label: "Oswald" },
+      { value: "'Abril Fatface', serif", label: "Abril Fatface" },
+      { value: "Fredoka, sans-serif", label: "Fredoka" },
+      { value: "Cinzel, serif", label: "Cinzel" },
+      { value: "Righteous, sans-serif", label: "Righteous" },
+    ],
+  },
+  {
+    category: "Handwriting",
+    fonts: [
+      { value: "Pacifico, cursive", label: "Pacifico" },
+      { value: "'Dancing Script', cursive", label: "Dancing Script" },
+      { value: "Caveat, cursive", label: "Caveat" },
+      { value: "Lobster, cursive", label: "Lobster" },
+    ],
+  },
+  {
+    category: "Monospace",
+    fonts: [
+      { value: "'JetBrains Mono', monospace", label: "JetBrains Mono" },
+      { value: "'Space Mono', monospace", label: "Space Mono" },
+      { value: "'IBM Plex Mono', monospace", label: "IBM Plex Mono" },
+      { value: "'Roboto Mono', monospace", label: "Roboto Mono" },
+    ],
+  },
+  {
+    category: "System",
+    fonts: FONT_OPTIONS,
+  },
+];
+
+/** كل عائلات الخطوط المضمنة (للتحميل المسبق عبر document.fonts.load). */
+export const FONT_FAMILY_NAMES: string[] = [
+  "Cairo", "Tajawal", "Almarai", "IBM Plex Sans Arabic", "Reem Kufi", "Amiri", "Noto Kufi Arabic",
+  "Inter", "Poppins", "Montserrat", "Nunito Sans", "Work Sans", "Manrope", "DM Sans", "Roboto",
+  "Open Sans", "Lato", "Playfair Display", "Merriweather", "Lora", "Libre Baskerville",
+  "Cormorant Garamond", "PT Serif", "Bebas Neue", "Anton", "Oswald", "Abril Fatface", "Fredoka",
+  "Cinzel", "Righteous", "Pacifico", "Dancing Script", "Caveat", "Lobster", "JetBrains Mono",
+  "Space Mono", "IBM Plex Mono", "Roboto Mono",
+];
+
 export const WEIGHT_OPTIONS: { value: number; label: string }[] = [
   { value: 400, label: "Regular" },
   { value: 500, label: "Medium" },

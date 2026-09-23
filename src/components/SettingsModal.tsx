@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ExportOptions } from "./ExportDialog";
 import {
   X,
   Palette,
@@ -21,6 +22,8 @@ interface SettingsModalProps {
   onClose: () => void;
   currentTheme: string;
   onThemeChange: (id: string) => void;
+  exportPrefs?: ExportOptions;
+  onExportChange?: (opts: ExportOptions) => void;
 }
 
 const sections: { id: Section; icon: React.ReactNode; label: string }[] = [
@@ -31,7 +34,7 @@ const sections: { id: Section; icon: React.ReactNode; label: string }[] = [
   { id: "about", icon: <Info size={15} strokeWidth={1.75} />, label: "About" },
 ];
 
-export default function SettingsModal({ open, onClose, currentTheme, onThemeChange }: SettingsModalProps) {
+export default function SettingsModal({ open, onClose, currentTheme, onThemeChange, exportPrefs, onExportChange }: SettingsModalProps) {
   const [activeSection, setActiveSection] = useState<Section>("appearance");
 
   if (!open) return null;
@@ -124,7 +127,7 @@ export default function SettingsModal({ open, onClose, currentTheme, onThemeChan
               <AppearanceSection currentTheme={currentTheme} onThemeChange={onThemeChange} />
             )}
             {activeSection === "canvas" && <CanvasSection />}
-            {activeSection === "export" && <ExportSection />}
+            {activeSection === "export" && <ExportSection prefs={exportPrefs} onChange={onExportChange} />}
             {activeSection === "shortcuts" && <ShortcutsSection />}
             {activeSection === "about" && <AboutSection />}
           </div>
@@ -281,11 +284,17 @@ function CanvasSection() {
 
 /* ─── Export ─────────────────────────────────────────────── */
 
-function ExportSection() {
+function ExportSection({ prefs, onChange }: { prefs?: ExportOptions; onChange?: (opts: ExportOptions) => void }) {
+  const p: ExportOptions = prefs ?? { format: "png", quality: 92, bg: "#FFFFFF" };
+  const up = (patch: Partial<ExportOptions>) => onChange?.({ ...p, ...patch });
   return (
     <div className="flex flex-col gap-7">
-      <SettingBlock title="Default Format" description="Format used when clicking Export.">
-        <ToggleGroup options={["PNG", "JPG", "WEBP", "AVIF"]} value="PNG" onChange={() => {}} />
+      <SettingBlock title="Default Format" description="Format pre-selected when clicking Export.">
+        <ToggleGroup
+          options={["PNG", "JPG", "WEBP"]}
+          value={p.format === "jpeg" ? "JPG" : p.format === "webp" ? "WEBP" : "PNG"}
+          onChange={(v) => up({ format: v === "JPG" ? "jpeg" : v === "WEBP" ? "webp" : "png" })}
+        />
       </SettingBlock>
       <SettingBlock title="JPEG / WEBP Quality" description="Compression quality for lossy formats.">
         <div className="flex items-center gap-3 pt-1">
@@ -293,12 +302,13 @@ function ExportSection() {
             type="range"
             min={60}
             max={100}
-            defaultValue={92}
+            value={p.quality}
+            onChange={(e) => up({ quality: Math.round(Number(e.target.value)) })}
             className="flex-1"
             style={{ accentColor: "var(--accent)" }}
           />
           <span className="text-xs tabular-nums w-8 text-right" style={{ color: "var(--foreground)" }}>
-            92%
+            {p.quality}%
           </span>
         </div>
       </SettingBlock>

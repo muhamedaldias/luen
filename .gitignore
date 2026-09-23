@@ -9,8 +9,9 @@ vite.config.*.timestamp-*
 *-debug.log*
 logs/
 *.log
-.claude-replay.*
+.tmp/
 .tmp-*
+guide-build/
 
 # Environment variables & secrets
 .env*

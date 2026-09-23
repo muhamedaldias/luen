@@ -2,6 +2,16 @@
    تُستخدم تلقائياً عندما لا يوجد imageId (الباكند غير متصل) —
    كل فلاتر القائمة العلوية تعمل دائماً، والباكند يُستخدم عند توفره لجودة أعلى. */
 
+import {
+  keepMajorMaskComponents,
+  keepAnchorMaskComponents,
+  sharpenAlpha,
+  erodeAlpha,
+  featherAlpha,
+  maskSoftnessRatio,
+  refineRadii,
+} from "./maskRefine";
+
 function loadImg(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -185,11 +195,183 @@ function autoEnhance(src: HTMLCanvasElement): HTMLCanvasElement {
   return c;
 }
 
-/** إزالة خلفية محلية: region-growing من الحواف + تنعيم. تعمل بلا سيرفر. */
-function removeBackground(src: HTMLCanvasElement): HTMLCanvasElement {
+/* ── إزالة الخلفية العصبية (u2netp + onnxruntime-web) ──
+ * U²-Netp (~4.5MB، Apache-2.0) مستضاف محلياً في public/models — كشف كائنات
+ * بارزة يناسب صور المنتجات، يعمل أوفلاين بالكامل عبر WASM.
+ * المعالجة المسبقة/اللاحقة مطابقة لمرجع rembg: 320×320 وتطبيع ImageNet. */
+const U2NET_MODEL = "/models/u2netp.onnx";
+const U2NET_SIZE = 320;
+const U2NET_MEAN = [0.485, 0.456, 0.406];
+const U2NET_STD = [0.229, 0.224, 0.225];
+// ملفات تشغيل ORT من CDN — الروابط الخارجية لا يلمسها Vite (مسار /public/?import يرجع index.html).
+// النموذج نفسه (u2netp.onnx) مستضاف محلياً — بلا اعتماد على huggingface.
+const ORT_WASM_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/";
+type OrtValue = { data: Float32Array; dims: number[] };
+type OrtSession = {
+  run: (feeds: Record<string, unknown>) => Promise<Record<string, OrtValue>>;
+  inputNames: readonly string[];
+  outputNames: readonly string[];
+};
+type OrtModule = {
+  InferenceSession: { create: (path: string, opts?: Record<string, unknown>) => Promise<OrtSession> };
+  Tensor: new (type: string, data: Float32Array, dims: number[]) => unknown;
+  env: { wasm: { wasmPaths: string | { mjs: string; wasm: string } } };
+};
+
+let ortSessionPromise: Promise<OrtSession> | null = null;
+
+async function loadNeuralSession(): Promise<{ session: OrtSession; ort: OrtModule }> {
+  if (!ortSessionPromise) {
+    ortSessionPromise = (async () => {
+      const ort = (await import("onnxruntime-web")) as unknown as OrtModule;
+      ort.env.wasm.wasmPaths = ORT_WASM_CDN;
+      return await ort.InferenceSession.create(U2NET_MODEL, { executionProviders: ["wasm"] });
+    })();
+    // فشل التحميل لا يُقفل المسار العصبي — تُعاد المحاولة في النداء التالي.
+    ortSessionPromise.catch(() => {
+      ortSessionPromise = null;
+    });
+  }
+  const ort = (await import("onnxruntime-web")) as unknown as OrtModule;
+  return { session: await ortSessionPromise, ort };
+}
+
+/** إزالة خلفية عصبية: u2netp يقنّع الكائن البارز، والقناع يُطبَّق على ألفا الصورة.
+ * anchor: نسبة نقرة المستخدم (0..1) — إن وُجدت يُبقى مكوّنها حصرًا مع المكوّنات
+ * الموثوقة، فلا تنجو بقايا الانعكاسات الكبيرة مهما بلغ حجمها. */
+async function removeBackgroundNeural(
+  src: HTMLCanvasElement,
+  anchor?: { ax: number; ay: number },
+): Promise<HTMLCanvasElement> {
+  const { session, ort } = await loadNeuralSession();
+
+  // معالجة مسبقة: 320×320، CHW، تطبيع ImageNet
+  const [small, sctx] = canvasOf(U2NET_SIZE, U2NET_SIZE);
+  sctx.imageSmoothingEnabled = true;
+  sctx.imageSmoothingQuality = "high";
+  sctx.drawImage(src, 0, 0, U2NET_SIZE, U2NET_SIZE);
+  const sd = sctx.getImageData(0, 0, U2NET_SIZE, U2NET_SIZE).data;
+  const plane = U2NET_SIZE * U2NET_SIZE;
+  const input = new Float32Array(3 * plane);
+  for (let p = 0; p < plane; p++) {
+    input[p] = (sd[p * 4] / 255 - U2NET_MEAN[0]) / U2NET_STD[0];
+    input[plane + p] = (sd[p * 4 + 1] / 255 - U2NET_MEAN[1]) / U2NET_STD[1];
+    input[2 * plane + p] = (sd[p * 4 + 2] / 255 - U2NET_MEAN[2]) / U2NET_STD[2];
+  }
+
+  const inputName = session.inputNames[0];
+  const outputName = session.outputNames[0];
+  const feeds: Record<string, unknown> = {
+    [inputName]: new ort.Tensor("float32", input, [1, 3, U2NET_SIZE, U2NET_SIZE]),
+  };
+  const results = await session.run(feeds);
+  const out = results[outputName] ?? Object.values(results)[0];
+  if (!out || !out.data || out.data.length === 0) {
+    throw new Error("segmentation returned no usable mask");
+  }
+  const od = out.data;
+  const ow = out.dims[out.dims.length - 1];
+  const oh = out.dims[out.dims.length - 2];
+  const n = ow * oh;
+
+  // مخرج d0 بعد السيجمويد: تطبيع min-max إلى 0..255 (عرف rembg)
+  let mn = 1;
+  let mx = 0;
+  for (let p = 0; p < n; p++) {
+    const v = od[p];
+    if (v < mn) mn = v;
+    if (v > mx) mx = v;
+  }
+  const range = Math.max(1e-6, mx - mn);
+  // فلتر ثقة: قناع موضوع حقيقي تباينه واسع؛ هلوسة التدرجات مداها ضيق — نرفضها.
+  if (mx - mn < 0.35) {
+    throw new Error("No clear subject found — nothing to remove");
+  }
+  const vals = new Uint8ClampedArray(n);
+  let keep = 0;
+  for (let p = 0; p < n; p++) {
+    const v = Math.round(((od[p] - mn) / range) * 255);
+    vals[p] = v;
+    if (v > 127) keep++;
+  }
+  const keepRatio = keep / n;
+  // خلفية مجردة بلا موضوع واضح: نرفض بدل إنتاج نتيجة مضلِّلة.
+  if (keepRatio < 0.02 || keepRatio > 0.98) {
+    throw new Error("No clear subject found — nothing to remove");
+  }
+
+  // تنقية 1: حذف البقع الشاردة والانعكاسات (دقة القناع 320 تُنتجها كثيرًا).
+  // مع نقرة المستخدم: المكوّن المُنقر هو الموضوع — يُبقى هو وموثوقاته فقط.
+  if (anchor) {
+    keepAnchorMaskComponents(vals, ow, oh, anchor.ax * ow, anchor.ay * oh);
+  } else {
+    keepMajorMaskComponents(vals, ow, oh);
+  }
+
+  const [mc, mctx] = canvasOf(ow, oh);
+  const mimg = mctx.createImageData(ow, oh);
+  for (let p = 0; p < n; p++) {
+    const v = vals[p];
+    mimg.data[p * 4] = v;
+    mimg.data[p * 4 + 1] = v;
+    mimg.data[p * 4 + 2] = v;
+    mimg.data[p * 4 + 3] = 255;
+  }
+  mctx.putImageData(mimg, 0, 0);
+
+  // تكبير القناع بحواف ناعمة ثم ضربه في قناة الألفا
   const W = src.width;
   const H = src.height;
-  const MAXS = 400;
+  const [big, bctx] = canvasOf(W, H);
+  bctx.imageSmoothingEnabled = true;
+  bctx.imageSmoothingQuality = "high";
+  bctx.drawImage(mc, 0, 0, W, H);
+  const maskAlpha = bctx.getImageData(0, 0, W, H).data;
+
+  // تنقية 2: منحنى الثقة + تآكل تكيفي + ريشة — التآكل يُلغى تلقائيًا للموضوعات
+  // الناعمة (زجاج/شفاف) حيث نسبة البكسلات الوسطية عالية، كي لا تُؤكل الحواف الرقيقة.
+  const softness = maskSoftnessRatio(vals, n);
+  const radii = refineRadii(Math.min(W, H));
+  const erode = softness > 0.25 ? 0 : radii.erode;
+  const refined = new Uint8ClampedArray(W * H);
+  for (let p = 0; p < W * H; p++) refined[p] = sharpenAlpha(maskAlpha[p * 4]);
+  erodeAlpha(refined, W, H, erode);
+  featherAlpha(refined, W, H, radii.feather);
+  for (let p = 0; p < W * H; p++) {
+    const v = refined[p];
+    maskAlpha[p * 4] = v;
+    maskAlpha[p * 4 + 1] = v;
+    maskAlpha[p * 4 + 2] = v;
+  }
+
+  const [outC, octx] = canvasOf(W, H);
+  octx.drawImage(src, 0, 0);
+  const img = octx.getImageData(0, 0, W, H);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i + 3] = Math.round((d[i + 3] * maskAlpha[i]) / 255);
+  }
+  octx.putImageData(img, 0, 0);
+  return outC;
+}
+
+/** إزالة الخلفية الذكية: العصبية أولاً، والكلاسيكية احتياط. */
+async function removeBackgroundSmart(
+  src: HTMLCanvasElement,
+  anchor?: { ax: number; ay: number },
+): Promise<HTMLCanvasElement> {
+  try {
+    return await removeBackgroundNeural(src, anchor);
+  } catch {
+    return removeBackgroundClassic(src);
+  }
+}
+
+/** إزالة خلفية كلاسيكية (احتياطية): region-growing من الحواف + تنعيم. تعمل بلا سيرفر. */
+function removeBackgroundClassic(src: HTMLCanvasElement): HTMLCanvasElement {
+  const W = src.width;
+  const H = src.height;
+  const MAXS = 640;
   const s = Math.min(1, MAXS / Math.max(W, H));
   const sw = Math.max(8, Math.round(W * s));
   const sh = Math.max(8, Math.round(H * s));
@@ -257,30 +439,43 @@ function removeBackground(src: HTMLCanvasElement): HTMLCanvasElement {
   const ratio = fgCount / (sw * sh);
 
   const [maskC, mctx] = canvasOf(sw, sh);
-  const mimg = mctx.createImageData(sw, sh);
   if (ratio < 0.02 || ratio > 0.98) {
-    // تراجع آمن: قطع ناقص مركزي
-    mctx.fillStyle = "#000";
-    mctx.fillRect(0, 0, sw, sh);
-    mctx.fillStyle = "#fff";
-    mctx.beginPath();
-    mctx.ellipse(sw / 2, sh / 2, sw * 0.38, sh * 0.38, 0, 0, Math.PI * 2);
-    mctx.fill();
-  } else {
+    // لا موضوع واضح: خطأ صريح بدل قناع دائري مضلِّل.
+    throw new Error("No clear subject found — background removal needs a distinct subject");
+  }
+  const mimg = mctx.createImageData(sw, sh);
+  {
     const md = mimg.data;
+    // تنقية: حذف جزر المقدمة الشاردة قبل التكبير (رخيصة التكلفة بدقة العمل المصغّرة)
+    const packed = new Uint8ClampedArray(sw * sh);
+    for (let p = 0; p < sw * sh; p++) packed[p] = seen[p] ? 0 : 255;
+    keepMajorMaskComponents(packed, sw, sh);
     for (let p = 0; p < sw * sh; p++) {
-      const v = seen[p] ? 0 : 255;
+      const v = packed[p];
       md[p * 4] = v; md[p * 4 + 1] = v; md[p * 4 + 2] = v; md[p * 4 + 3] = 255;
     }
     mctx.putImageData(mimg, 0, 0);
   }
 
-  // تكبير ناعم للقناع (feather طبيعي) ثم تطبيقه
+  // تكبير ناعم للقناع ثم تنقية الحواف (تآكل يزيل الهالة + ريشة) قبل تطبيق الألفا
   const [big, bctx] = canvasOf(W, H);
   bctx.imageSmoothingEnabled = true;
   bctx.imageSmoothingQuality = "high";
   bctx.drawImage(maskC, 0, 0, W, H);
   const maskAlpha = bctx.getImageData(0, 0, W, H).data;
+  {
+    const { erode, feather } = refineRadii(Math.min(W, H));
+    const refined = new Uint8ClampedArray(W * H);
+    for (let p = 0; p < W * H; p++) refined[p] = maskAlpha[p * 4];
+    erodeAlpha(refined, W, H, erode);
+    featherAlpha(refined, W, H, feather);
+    for (let p = 0; p < W * H; p++) {
+      const v = refined[p];
+      maskAlpha[p * 4] = v;
+      maskAlpha[p * 4 + 1] = v;
+      maskAlpha[p * 4 + 2] = v;
+    }
+  }
 
   const [c, ctx] = canvasOf(W, H);
   ctx.drawImage(src, 0, 0);
@@ -1056,9 +1251,13 @@ export async function applyLocalOp(
       out = resize(base, base.width * sc, base.height * sc);
       break;
     }
-    case "remove_background":
-      out = removeBackground(base);
+    case "remove_background": {
+      const ax = num(params.ax, -1);
+      const ay = num(params.ay, -1);
+      const anchor = ax >= 0 && ay >= 0 ? { ax, ay } : undefined;
+      out = await removeBackgroundSmart(base, anchor);
       break;
+    }
     case "remove_object": {
       const mask = params.mask;
       if (typeof mask !== "string" || !mask) throw new Error("mask is required");

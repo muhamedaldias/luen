@@ -1,6 +1,6 @@
 import { cloneEfficient, type LayerRef } from "./layerSystem";
 import type { TextLayer } from "./textLayers";
-import type { ImageLayer, ShapeLayer, SolidLayer } from "./layers";
+import type { ImageLayer, ShapeLayer, SolidLayer, StrokeLayer } from "./layers";
 
 /* سجل التراجع (Undo/Redo) — مستخرج من App.tsx كخطوة عزل أولى:
  * كل لقطة (Memento) تحفظ الحالة الكاملة، بحد أقصى تكيّفي حسب حجم الصورة
@@ -20,6 +20,11 @@ export interface HistoryEntry {
   imageLayers: ImageLayer[];
   shapeLayers: ShapeLayer[];
   solidLayers: SolidLayer[];
+  strokeLayers?: StrokeLayer[];
+  /** الصورة الأساسية قبل أول خلفية من المكتبة — لاستبدال الخلفيات لاحقاً. */
+  baseBeforeBackdrop?: CanvasImage | null;
+  /** هل صورة اللقطة خلفية مجردة بلا صورة منتج ولا محتوى مستخدم مدمج؟ */
+  pureBackdrop?: boolean;
   strokes: object[];
   order: LayerRef[];
   groups: Record<string, string>;

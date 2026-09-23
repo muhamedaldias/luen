@@ -76,6 +76,15 @@ export interface SolidLayer {
   mask?: LayerMask;
 }
 
+/** ضربة فرشاة حيّة — تُرسم ككائن Path قابل للتحديد والتعديل قبل دمجها في الصورة. */
+export interface StrokeLayer {
+  id: string;
+  name: string;
+  width: number;
+  color: string;
+  opacity: number;
+}
+
 export type AnyLayer = ImageLayer | ShapeLayer | SolidLayer;
 
 function uid(prefix: string): string {
@@ -146,6 +155,16 @@ export function createSolidLayer(partial?: Partial<SolidLayer>): SolidLayer {
  * A mask is a grayscale/alpha image stretched over the layer's bounds:
  * white = reveal, black = hide. Stored as a data URL so it survives
  * history snapshots, project files, and export without extra assets. */
+
+export function createStrokeLayer(partial?: Partial<StrokeLayer>): StrokeLayer {
+  return {
+    id: partial?.id ?? uid("str"),
+    name: partial?.name ?? "Brush stroke",
+    width: partial?.width ?? 4,
+    color: partial?.color ?? "#C97B4A",
+    opacity: partial?.opacity ?? 100,
+  };
+}
 
 export interface LayerMask {
   /** Grayscale/alpha mask image (data URL), stretched to the layer bounds. */

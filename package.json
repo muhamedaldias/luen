@@ -12,6 +12,7 @@
   "dependencies": {
     "fabric": "^6.4.0",
     "lucide-react": "^1.45.0",
+    "onnxruntime-web": "1.19.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-resizable-panels": "^4.12.4"

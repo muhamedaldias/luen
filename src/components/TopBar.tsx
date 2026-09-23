@@ -1,9 +1,44 @@
-import { useState, useRef, useEffect } from "react";
-import { Undo2, Redo2, Save, Download, ChevronDown, Settings, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Undo2, Redo2, Save, Download, ChevronDown, Settings, PanelRightClose, PanelRightOpen, CircleQuestionMark } from "lucide-react";
+import { FilterInfoCard } from "./FilterInfoCard";
+import { FILTER_INFO, prewarmFilterPreviews } from "../lib/filterPreviews";
+
+/** دليل الاستخدام العربي (PDF) — يُخدم من public/ فيُنسخ إلى dist تلقائياً عند البناء. */
+const GUIDE_URL = `${import.meta.env.BASE_URL}Lumen-User-Guide-AR.pdf`;
+const GUIDE_FILENAME = "Lumen-User-Guide-AR.pdf";
+
+/**
+ * تحميل الدليل كـ blob لإجبار التنزيل بدل معاينة المتصفح المدمجة للـ PDF،
+ * مع fallback لفتح الدليل في تبويب جديد (مفيد في WebView سطح المكتب حيث
+ * قد يُتجاهل download attribute).
+ */
+async function downloadUserGuide(): Promise<void> {
+  try {
+    const res = await fetch(GUIDE_URL);
+    if (!res.ok) throw new Error(`guide fetch failed: ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = GUIDE_FILENAME;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch {
+    window.open(GUIDE_URL, "_blank", "noopener");
+  }
+}
 
 type MenuKey = "file" | "edit" | "image" | "select" | "layer" | "filter" | null;
 
-const menus: { key: MenuKey; label: string; items: string[] }[] = [
+interface MenuSection {
+  title: string;
+  items: string[];
+}
+
+const menus: { key: MenuKey; label: string; items?: string[]; sections?: MenuSection[] }[] = [
   {
     key: "file",
     label: "File",
@@ -63,28 +98,12 @@ const menus: { key: MenuKey; label: string; items: string[] }[] = [
   {
     key: "filter",
     label: "Filter",
-    items: [
-      "Blur…",
-      "Sharpen…",
-      "Brightness / Contrast…",
-      "Hue / Saturation…",
-      "Color Balance…",
-      "Vibrance…",
-      "Levels…",
-      "Curves…",
-      "Grayscale",
-      "Sepia",
-      "Vignette…",
-      "Auto Enhance",
-      "Pro Enhance",
-      "—",
-      "Blend Two Images…",
-      "Remove Object…",
-      "AI Upscale…",
-      "—",
-      "Save Preset",
-      "Load Presets…",
-      "Export Presets…",
+    sections: [
+      { title: "Adjust", items: ["Brightness / Contrast…", "Hue / Saturation…", "Color Balance…", "Vibrance…", "Levels…", "Curves…"] },
+      { title: "Effects", items: ["Blur…", "Sharpen…", "Vignette…"] },
+      { title: "One-click", items: ["Grayscale", "Sepia", "Auto Enhance", "Pro Enhance"] },
+      { title: "AI tools", items: ["Blend Two Images…", "Remove Object…", "AI Upscale…"] },
+      { title: "Presets", items: ["Save Preset", "Load Presets…", "Export Presets…"] },
     ],
   },
 ];
@@ -111,6 +130,10 @@ interface TopBarProps {
 export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRedo, saveState = "saved", onSettingsOpen, onSave, onExport, onOpen, onNew, onSaveProject, onOpenProject, onRemoveBackground, onMenuAction, panelOpen = true, onTogglePanel }: TopBarProps) {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [infoCard, setInfoCard] = useState<{ label: string; itemRect: DOMRect; panelRect: DOMRect } | null>(null);
+  const infoVisibleRef = useRef(false);
+  const cardEnterTimer = useRef(0);
+  const cardHideTimer = useRef(0);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -121,6 +144,108 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (openMenu === "filter") {
+      prewarmFilterPreviews();
+      return;
+    }
+    window.clearTimeout(cardEnterTimer.current);
+    window.clearTimeout(cardHideTimer.current);
+    infoVisibleRef.current = false;
+    setInfoCard(null);
+  }, [openMenu]);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(cardEnterTimer.current);
+      window.clearTimeout(cardHideTimer.current);
+    },
+    []
+  );
+
+  function scheduleInfoCard(item: string, el: HTMLElement) {
+    window.clearTimeout(cardEnterTimer.current);
+    window.clearTimeout(cardHideTimer.current);
+    const capture = () => {
+      const panel = el.closest("[data-menu-panel]");
+      if (!panel) return;
+      setInfoCard({ label: item, itemRect: el.getBoundingClientRect(), panelRect: panel.getBoundingClientRect() });
+    };
+    if (infoVisibleRef.current) {
+      capture();
+    } else {
+      cardEnterTimer.current = window.setTimeout(() => {
+        infoVisibleRef.current = true;
+        capture();
+      }, 220);
+    }
+  }
+
+  function hideInfoCardSoon() {
+    window.clearTimeout(cardEnterTimer.current);
+    window.clearTimeout(cardHideTimer.current);
+    cardHideTimer.current = window.setTimeout(() => {
+      infoVisibleRef.current = false;
+      setInfoCard(null);
+    }, 140);
+  }
+
+  function handlePanelKeyDown(e: React.KeyboardEvent<HTMLDivElement>, key: MenuKey) {
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-menu-item]"));
+    if (!items.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const activeIdx = items.indexOf(document.activeElement as HTMLButtonElement);
+      const nextIdx =
+        activeIdx === -1
+          ? e.key === "ArrowDown"
+            ? 0
+            : items.length - 1
+          : e.key === "ArrowDown"
+            ? (activeIdx + 1) % items.length
+            : (activeIdx - 1 + items.length) % items.length;
+      items[nextIdx]?.focus();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setOpenMenu(null);
+      menuRef.current?.querySelector<HTMLButtonElement>(`button[data-menu-trigger="${key}"]`)?.focus();
+    }
+  }
+
+  function renderMenuItem(item: string, key: string) {
+    const hasInfo = item in FILTER_INFO;
+    return (
+      <button
+        key={key}
+        data-menu-item
+        role="menuitem"
+        className="w-full text-left px-3 py-1.5 text-sm transition-colors duration-75"
+        style={{ color: "var(--foreground)" }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "var(--secondary)";
+          if (hasInfo) scheduleInfoCard(item, e.currentTarget);
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
+          if (hasInfo) hideInfoCardSoon();
+        }}
+        onFocus={(e) => {
+          e.currentTarget.scrollIntoView({ block: "nearest" });
+          if (hasInfo) scheduleInfoCard(item, e.currentTarget);
+        }}
+        onBlur={() => {
+          if (hasInfo) hideInfoCardSoon();
+        }}
+        onClick={() => {
+          setOpenMenu(null);
+          handleMenuAction(item);
+        }}
+      >
+        {item}
+      </button>
+    );
+  }
 
   function handleMenuAction(item: string) {
     console.log(`[topbar] action ${item}`);
@@ -195,6 +320,9 @@ return (
 {menus.map((m) => (
            <div key={m.key} className="relative">
              <button
+               data-menu-trigger={m.key}
+               aria-haspopup="menu"
+               aria-expanded={openMenu === m.key}
                className="relative flex items-center gap-0.5 px-4 h-10 rounded transition-colors duration-100"
                style={{
                  color: openMenu === m.key ? "var(--foreground)" : "var(--muted-foreground)",
@@ -202,6 +330,18 @@ return (
                  fontWeight: openMenu === m.key ? 500 : 400,
                  fontSize: 14,
                }}
+              onKeyDown={(e) => {
+                if (e.key !== "ArrowDown") return;
+                e.preventDefault();
+                if (openMenu === m.key) {
+                  menuRef.current?.querySelector<HTMLButtonElement>("[data-menu-panel] button[data-menu-item]")?.focus();
+                } else {
+                  setOpenMenu(m.key);
+                  requestAnimationFrame(() => {
+                    menuRef.current?.querySelector<HTMLButtonElement>("[data-menu-panel] button[data-menu-item]")?.focus();
+                  });
+                }
+              }}
               onClick={() => {
                 console.log(`[topbar] menu ${m.key}`);
                 setOpenMenu(openMenu === m.key ? null : m.key);
@@ -213,7 +353,11 @@ return (
 
 {openMenu === m.key && (
                <div
-                 className="absolute top-full left-0 mt-0.5 py-1 min-w-44 z-50"
+                 data-menu-panel={m.key}
+                 role="menu"
+                 aria-label={m.label}
+                 onKeyDown={(e) => handlePanelKeyDown(e, m.key)}
+                 className="absolute top-full left-0 mt-0.5 min-w-44 z-50"
                  style={{
                     background: "var(--elevated)",
                    border: "1px solid var(--border)",
@@ -221,29 +365,32 @@ return (
                    boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
                  }}
                >
-                 {m.items.map((item, i) =>
-                   item === "—" ? (
-                     <div key={i} className="my-1 mx-2" style={{ borderTop: "1px solid var(--border)" }} />
-                   ) : (
-                     <button
-                       key={i}
-                       className="w-full text-left px-3 py-1.5 text-sm transition-colors duration-75"
-                       style={{ color: "var(--foreground)" }}
-                       onMouseEnter={(e) => (e.currentTarget.style.background = "var(--secondary)")}
-                       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                       onClick={() => {
-                         setOpenMenu(null);
-                         handleMenuAction(item);
-                       }}
-                     >
-                       {item}
-                     </button>
-                   )
-                 )}
+                 <MenuScrollBox onScrollUser={hideInfoCardSoon}>
+                   {m.sections
+                     ? m.sections.map((s) => (
+                         <div key={s.title} role="group" aria-label={s.title}>
+                           <div
+                             className="sticky top-0 z-10 px-3 pt-2 pb-1 text-[11px] font-medium"
+                             style={{ color: "var(--muted-foreground)", background: "var(--elevated)" }}
+                           >
+                             {s.title}
+                           </div>
+                           {s.items.map((item) => renderMenuItem(item, `${s.title}-${item}`))}
+                         </div>
+                       ))
+                     : m.items?.map((item, i) =>
+                         item === "—" ? (
+                           <div key={`sep-${i}`} role="separator" className="my-1 mx-2" style={{ borderTop: "1px solid var(--border)" }} />
+                         ) : (
+                           renderMenuItem(item, `item-${i}`)
+                         )
+                       )}
+                 </MenuScrollBox>
                </div>
              )}
           </div>
         ))}
+        {infoCard && <FilterInfoCard label={infoCard.label} itemRect={infoCard.itemRect} panelRect={infoCard.panelRect} />}
       </nav>
 
       {/* Spacer */}
@@ -309,6 +456,14 @@ return (
         </button>
 
         <div className="w-px h-5 mx-1" style={{ background: "var(--border)" }} />
+
+        <div data-testid="help-guide-btn" title="تحميل دليل الاستخدام (PDF) — Download user guide">
+          <ActionBtn
+            icon={<CircleQuestionMark size={15} />}
+            label="Help"
+            onClick={() => void downloadUserGuide()}
+          />
+        </div>
 
         <ActionBtn
           icon={<Settings size={15} />}
@@ -388,5 +543,61 @@ function LogoMark() {
       <rect x="10" y="2" width="6" height="8" rx="1.5" fill="currentColor" opacity="0.55" />
       <rect x="10" y="12" width="6" height="4" rx="1.5" fill="currentColor" opacity="0.3" />
     </svg>
+  );
+}
+
+/**
+ * Scrollable menu body: caps height to the viewport so long menus (Filter,
+ * Layer) never overflow the screen, with fade edges shown only while
+ * scrollable in that direction.
+ */
+function MenuScrollBox({ children, onScrollUser }: { children: React.ReactNode; onScrollUser?: () => void }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState({ top: false, bottom: false });
+
+  const update = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const top = el.scrollTop > 2;
+    const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
+    setFade((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }));
+  }, []);
+
+  useEffect(() => {
+    update();
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [update]);
+
+  return (
+    <div className="relative">
+      <div
+        ref={scrollRef}
+        onScroll={onScrollUser}
+        className="overflow-y-auto overscroll-contain py-1"
+        style={{ maxHeight: "calc(100vh - 96px)" }}
+      >
+        {children}
+      </div>
+      {fade.top && (
+        <div
+          className="pointer-events-none absolute top-0 right-0 left-0 h-3"
+          style={{ background: "linear-gradient(to bottom, var(--elevated), transparent)" }}
+        />
+      )}
+      {fade.bottom && (
+        <div
+          className="pointer-events-none absolute bottom-0 right-0 left-0 h-3"
+          style={{ background: "linear-gradient(to top, var(--elevated), transparent)" }}
+        />
+      )}
+    </div>
   );
 }

@@ -17,12 +17,15 @@ import { saveAutosave, loadAutosave, clearAutosave } from "./lib/autosave";
 import { applyLocalOp, getNaturalSize } from "./lib/localOps";
 import MenuDialog, { type DialogKind } from "./components/MenuDialog";
 import MaskEditor from "./components/MaskEditor";
+import ExportDialog, { type ExportOptions } from "./components/ExportDialog";
+import AssetsDrawer from "./components/AssetsDrawer";
+import { ASSET_LIST, assetDataUrl, type AssetDef } from "./lib/assetLibrary";
 import NewLayerDialog, { type NewLayerChoice } from "./components/NewLayerDialog";
 import NewCanvasDialog, { type NewCanvasOpts } from "./components/NewCanvasDialog";
 import BlendDialog from "./components/BlendDialog";
 import PresetPanel from "./components/PresetPanel";
 import { createPreset, importPresets, exportPresets } from "./lib/presets";
-import { createImageLayer, createShapeLayer, createSolidLayer, createLayerMask, bakeMaskIntoImage, type ImageLayer, type ShapeLayer, type SolidLayer, type LayerMask } from "./lib/layers";
+import { createImageLayer, createShapeLayer, createSolidLayer, createStrokeLayer, createLayerMask, bakeMaskIntoImage, type ImageLayer, type ShapeLayer, type SolidLayer, type StrokeLayer, type LayerMask } from "./lib/layers";
 import { magicWandSelect, quickSelect, combineMasks, countMaskPixels, featherMask, invertMask, solidMaskDataUrl, type QuickSeed, type QuickMode } from "./lib/selection";
 import {
   BG_ID,
@@ -138,6 +141,25 @@ export default function App() {
   const [wandBusy, setWandBusy] = useState(false);
   const [quickBrush, setQuickBrush] = useState(40);
   const [eraserSize, setEraserSize] = useState(36);
+  const [eraserOpacity, setEraserOpacity] = useState(100);
+  const [eraserHardness, setEraserHardness] = useState(100);
+  const [eraserMode, setEraserMode] = useState<"transparent" | "color">("transparent");
+  const [eraserColor, setEraserColor] = useState("#FFFFFF");
+  const [brushSize, setBrushSize] = useState(4);
+  const [brushColor, setBrushColor] = useState("#C97B4A");
+  const [brushOpacity, setBrushOpacity] = useState(100);
+  const [strokeLayers, setStrokeLayers] = useState<StrokeLayer[]>([]);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportPrefs, setExportPrefs] = useState<ExportOptions>(() => {
+    try {
+      const raw = localStorage.getItem("lumen_export_prefs");
+      if (raw) return { format: "png", quality: 92, bg: "#FFFFFF", ...(JSON.parse(raw) as Partial<ExportOptions>) };
+    } catch {
+      /* الافتراضيات */
+    }
+    return { format: "png", quality: 92, bg: "#FFFFFF" };
+  });
   const [quickTolerance, setQuickTolerance] = useState(32);
   const [quickBusy, setQuickBusy] = useState(false);
   const [layerOrder, setLayerOrder] = useState<LayerRef[]>([]);
@@ -178,6 +200,12 @@ export default function App() {
   const wandContiguousRef = useRef(true);
   const quickBrushRef = useRef(40);
   const eraserSizeRef = useRef(36);
+  const strokeLayersRef = useRef<StrokeLayer[]>([]);
+  const strokeEditTimer = useRef<number | null>(null);
+  /** الصورة الأساسية قبل أول خلفية من المكتبة — كل خلفية جديدة تُدمج فوقها مباشرة (استبدال). */
+  const baseBeforeBackdropRef = useRef<CanvasImage | null>(null);
+  /** هل الصورة الحالية خلفية مجردة فقط؟ صحيح يمنع التقاطها كأساس — الجديدة تستبدلها كلياً. */
+  const pureBackdropRef = useRef(false);
   const quickToleranceRef = useRef(32);
   const activeToolRef = useRef<ToolId>("select");
   const shapeKindRef = useRef<"rect" | "ellipse">("rect");
@@ -232,6 +260,9 @@ export default function App() {
     solidLayersRef.current = solidLayers;
   }, [solidLayers]);
   useEffect(() => {
+    strokeLayersRef.current = strokeLayers;
+  }, [strokeLayers]);
+  useEffect(() => {
     orderRef.current = layerOrder;
   }, [layerOrder]);
   useEffect(() => {
@@ -285,6 +316,8 @@ export default function App() {
     () => ({
       docSize: { ...docSizeRef.current },
       image: imageRef.current ? { ...imageRef.current } : null,
+      baseBeforeBackdrop: baseBeforeBackdropRef.current,
+      pureBackdrop: pureBackdropRef.current,
       textLayers: cloneLayers(layersRef.current),
       imageLayers: cloneLayers(imageLayersRef.current),
       shapeLayers: cloneLayers(shapeLayersRef.current),
@@ -373,6 +406,10 @@ export default function App() {
     setImageLayers(cloneLayers(entry.imageLayers ?? []));
     setShapeLayers(cloneLayers(entry.shapeLayers ?? []));
     setSolidLayers(cloneLayers(entry.solidLayers ?? []));
+    strokeLayersRef.current = cloneLayers(entry.strokeLayers ?? []);
+    setStrokeLayers(strokeLayersRef.current);
+    baseBeforeBackdropRef.current = entry.baseBeforeBackdrop ?? null;
+    pureBackdropRef.current = entry.pureBackdrop === true;
     setLayerOrder(entry.order ? [...entry.order] : []);
     setGroupNames(entry.groups ? { ...entry.groups } : {});
     setSelectionMask(entry.selectionMask ?? null);
@@ -452,7 +489,7 @@ export default function App() {
       }
       if (mod && e.shiftKey && !e.altKey && k === "e") {
         e.preventDefault();
-        void downloadCurrentImage("export.png");
+        setExportOpen(true);
         return;
       }
       if (k === "[" || (e.code === "BracketLeft" && !mod)) { setEraserSize((v) => Math.max(2, v - 4)); return; }
@@ -476,6 +513,8 @@ export default function App() {
         setShowGrid((v) => !v);
       } else if (k === "r") {
         setShowRulers((v) => !v);
+      } else if (k === "l") {
+        setLibraryOpen((v) => !v);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -491,14 +530,29 @@ export default function App() {
         setCanvasImage(next);
         imageRef.current = next;
       }
+      if (url) {
+        // الضربات الحيّة دُمجت في الصورة — أفرغ حالتها هنا.
+        strokeLayersRef.current = [];
+        setStrokeLayers([]);
+        // ضربات فوق خلفية مجردة تبقى جزءاً منها (تُستبدل معها)؛ فوق أساس حقيقي تصبح محتوى محفوظاً.
+        if (baseBeforeBackdropRef.current) pureBackdropRef.current = false;
+      }
     } catch {
       /* لا ضربات أو فشل الدمج — نكمل */
     }
     return imageRef.current;
   }, []);
 
+  /** انتهت الضربات الحيّة (دُمجت قبل عملية بكسل) — نظّف الحالة والتحديد. */
+  const handleStrokesBaked = useCallback(() => {
+    strokeLayersRef.current = [];
+    setStrokeLayers([]);
+    setSelectedLayer((sel) => (sel?.kind === "stroke" ? null : sel));
+    setSelectedIds((ss) => ss.filter((x) => !x.startsWith("stroke-")));
+  }, []);
+
   const pushHistory = useCallback(
-    (label: string, next?: { image?: CanvasImage | null; layers?: TextLayer[]; imageLayers?: ImageLayer[]; shapeLayers?: ShapeLayer[]; solidLayers?: SolidLayer[]; order?: LayerRef[]; groups?: Record<string, string>; selectionMask?: string | null; selectionInverted?: boolean }) => {
+    (label: string, next?: { image?: CanvasImage | null; layers?: TextLayer[]; imageLayers?: ImageLayer[]; shapeLayers?: ShapeLayer[]; solidLayers?: SolidLayer[]; strokeLayers?: StrokeLayer[]; baseBeforeBackdrop?: CanvasImage | null; order?: LayerRef[]; groups?: Record<string, string>; selectionMask?: string | null; selectionInverted?: boolean }) => {
       let strokes: object[] = [];
       try {
         const raw = stageRef.current?.getStrokes() ?? [];
@@ -525,6 +579,9 @@ export default function App() {
         imageLayers: cloneLayers(iNext),
         shapeLayers: cloneLayers(sNext),
         solidLayers: cloneLayers(fNext),
+        strokeLayers: cloneLayers(strokeLayersRef.current),
+        baseBeforeBackdrop: baseBeforeBackdropRef.current,
+        pureBackdrop: pureBackdropRef.current,
         strokes,
         order: freshOrder,
         groups: next?.groups ? { ...next.groups } : { ...groupsRef.current },
@@ -549,6 +606,138 @@ export default function App() {
     []
   );
 
+  /** ضربة فرشاة جديدة: كائن حيّ قابل للتحديد — تُدمج لاحقاً عند الحاجة (فلتر/ممحاة/تصدير). */
+  const handleStrokeAdded = useCallback(
+    (s: { id: string; name: string; width: number; color: string; opacity: number }) => {
+      const layer = createStrokeLayer(s);
+      const next = [...strokeLayersRef.current, layer];
+      strokeLayersRef.current = next;
+      setStrokeLayers(next);
+      pushHistory("Brush stroke", { strokeLayers: next });
+    },
+    [pushHistory]
+  );
+
+  /** تعديل مباشر لضربة محددة من لوحة الخصائص — معاينة حية، ولقطة تاريخ واحدة بعد التوقف. */
+  const handleUpdateStroke = useCallback((id: string, patch: Partial<StrokeLayer>) => {
+    const next = strokeLayersRef.current.map((l) => (l.id === id ? { ...l, ...patch } : l));
+    strokeLayersRef.current = next;
+    setStrokeLayers(next);
+    void stageRef.current?.updateStroke(id, patch);
+    if (strokeEditTimer.current) window.clearTimeout(strokeEditTimer.current);
+    strokeEditTimer.current = window.setTimeout(() => {
+      pushHistory("Edit stroke", { strokeLayers: strokeLayersRef.current });
+    }, 350);
+  }, [pushHistory]);
+
+  /** فحص خفيف: هل الصورة معتمة بالكامل (لا شفافية)؟ عيّنة مصغرة تكفي للقرار. */
+  const isOpaqueImage = useCallback(async (url: string): Promise<boolean> => {
+    try {
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("probe load failed"));
+        img.src = url;
+      });
+      const w = 96;
+      const h = 96;
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext("2d");
+      if (!ctx) return true;
+      ctx.drawImage(img, 0, 0, w, h);
+      const d = ctx.getImageData(0, 0, w, h).data;
+      let transparent = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] < 250) transparent++;
+      // قصاصة حقيقية شفافيتها >> 5% — ما دون ذلك يعتم بصرياً ولن تظهر الخلفية تحته.
+      return transparent / (w * h) < 0.05;
+    } catch {
+      return true;
+    }
+  }, []);
+
+  /** إضافة أصل من المكتبة: الخلفية تُدمج تحت الصورة في صورة الأساس (قابلة للتراجع)،
+   *  والمنتجات تُضاف كطبقة فوق الكل — عند الإفلات تتمركز في نقطة الإفلات. */
+  const handleAddAsset = useCallback(
+    (asset: AssetDef, at?: { nx: number; ny: number }) => {
+      const url = assetDataUrl(asset);
+      if (asset.kind === "background") {
+        void (async () => {
+          await bakeFlush();
+          // الأساس = الصورة قبل أول خلفية. أول إضافة تحفظه، وما بعدها يستبدل الخلفية فوقه
+          // (الخلفية مفردة بالتعريف — الجديدة تحل محل القديمة تحت الصورة الأصلية).
+          const cur = imageRef.current;
+          // التقاط الأساس فقط لصورة حقيقية سابقة للخلفية — الخلفية المجردة نفسها ليست أساساً.
+          if (cur && !baseBeforeBackdropRef.current && !pureBackdropRef.current) baseBeforeBackdropRef.current = cur;
+          let base = baseBeforeBackdropRef.current;
+          // صورة معتمة من الجهاز تغطي المركّب كلياً فتُخفي الخلفية (تُسجَّل في التاريخ بلا أثر مرئي).
+          // القصّ التلقائي (نمط Photoroom): أزل خلفية الصورة أولاً ليظهر المنتج فوق المشهد.
+          if (base && cur && (await isOpaqueImage(base.url))) {
+            const cutUrl = await handleApply("remove_background", {});
+            if (cutUrl) {
+              baseBeforeBackdropRef.current = { url: cutUrl, imageId: cur.imageId, width: cur.width, height: cur.height };
+              base = baseBeforeBackdropRef.current;
+            } else {
+              showNotice("Background added under the image, but the image is fully opaque so nothing shows — try Remove background first");
+            }
+          }
+          const docW = base?.width || docSizeRef.current.w || 1200;
+          const docH = base?.height || docSizeRef.current.h || 800;
+          const c = document.createElement("canvas");
+          c.width = docW;
+          c.height = docH;
+          const ctx = c.getContext("2d");
+          if (!ctx) return;
+          const aImg = new Image();
+          await new Promise<void>((resolve, reject) => {
+            aImg.onload = () => resolve();
+            aImg.onerror = () => reject(new Error("asset load failed"));
+            aImg.src = url;
+          });
+          const scale = Math.max(docW / asset.w, docH / asset.h);
+          const dw = asset.w * scale;
+          const dh = asset.h * scale;
+          ctx.drawImage(aImg, (docW - dw) / 2, (docH - dh) / 2, dw, dh);
+          if (base) {
+            const baseImg = new Image();
+            await new Promise<void>((resolve) => {
+              baseImg.onload = () => resolve();
+              baseImg.onerror = () => resolve();
+              baseImg.src = base.url;
+            });
+            ctx.drawImage(baseImg, 0, 0);
+          }
+          const merged = { url: c.toDataURL("image/png"), imageId: null, width: docW, height: docH };
+          setCanvasImage(merged);
+          imageRef.current = merged;
+          // لا أساس مركّب فوق الخلفية ⇒ النتيجة خلفية مجردة (الجديدة القادمة تستبدلها).
+          pureBackdropRef.current = base == null;
+          pushHistory("Add background", { image: merged, baseBeforeBackdrop: baseBeforeBackdropRef.current });
+        })().catch(() => showNotice("Could not add background"));
+      } else {
+        const x = at ? Math.max(-0.15, Math.min(0.75, at.nx - 0.2)) : 0.3;
+        const y = at ? Math.max(-0.15, Math.min(0.75, at.ny - 0.2)) : 0.22;
+        const layer = createImageLayer({ url, name: asset.name, x, y });
+        const next = [...imageLayersRef.current, layer];
+        setImageLayers(next);
+        setSelectedLayer({ kind: "image", id: layer.id });
+        setSelectedTextId(null);
+        pushHistory("Add asset", { imageLayers: next });
+      }
+    },
+    [pushHistory, isOpaqueImage]
+  );
+
+  /** إفلات أصل على الكانفس في نقطة محددة. */
+  const handleDropAsset = useCallback(
+    (assetId: string, at: { nx: number; ny: number }) => {
+      const asset = ASSET_LIST.find((a) => a.id === assetId);
+      if (asset) handleAddAsset(asset, at);
+    },
+    [handleAddAsset]
+  );
+
   /* ── نظام الطبقات الموحد: ترتيب + دمج + مجموعات + محاذاة ── */
   const kindOfId = useCallback((id: string): string | null => {
     if (id === BG_ID) return "background";
@@ -556,6 +745,7 @@ export default function App() {
     if (imageLayersRef.current.some((l) => l.id === id)) return "image";
     if (shapeLayersRef.current.some((l) => l.id === id)) return "shape";
     if (solidLayersRef.current.some((l) => l.id === id)) return "solid";
+    if (strokeLayersRef.current.some((l) => l.id === id)) return "stroke";
     return null;
   }, []);
 
@@ -893,6 +1083,12 @@ export default function App() {
         setSolidLayers(next);
         setLayerOrder(pruneOrder);
         pushHistory("Delete solid fill", { solidLayers: next, order: orderRef.current });
+      } else if (kind === "stroke") {
+        const next = strokeLayersRef.current.filter((l) => l.id !== id);
+        strokeLayersRef.current = next;
+        setStrokeLayers(next);
+        void stageRef.current?.removeStroke(id);
+        pushHistory("Delete stroke", { strokeLayers: next });
       }
       setSelectedLayer(null);
       setSelectedIds((ss) => ss.filter((x) => x !== id));
@@ -971,6 +1167,8 @@ export default function App() {
         width: uploaded?.width ?? natural.width,
         height: uploaded?.height ?? natural.height,
       };
+      baseBeforeBackdropRef.current = null;
+      pureBackdropRef.current = false;
       setCanvasImage(newImage);
       setBlankMode(false);
       pushHistory(`Open ${file.name}${uploaded ? "" : " (local)"}`, { image: newImage });
@@ -981,6 +1179,8 @@ export default function App() {
         width: uploaded.width,
         height: uploaded.height,
       };
+      baseBeforeBackdropRef.current = null;
+      pureBackdropRef.current = false;
       setCanvasImage(newImage);
       setBlankMode(false);
       pushHistory(`Open ${file.name}`, { image: newImage });
@@ -1044,12 +1244,13 @@ export default function App() {
     }
   }
 
-  async function handleRemoveBackground() {
+  async function handleRemoveBackground(ax?: number, ay?: number) {
     if (!imageRef.current) {
       setLoadError("Open an image first — then remove background");
       return;
     }
-    await handleApply("remove_background", {});
+    const hasAnchor = typeof ax === "number" && typeof ay === "number";
+    await handleApply("remove_background", hasAnchor ? { ax, ay } : {});
   }
 
   function requireImage(): boolean {
@@ -1064,6 +1265,8 @@ export default function App() {
     await bakeFlush();
     const current = imageRef.current;
     const hasAny = current || layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
+    // هل ستُدمج طبقات مستخدم في الصورة؟ إن وجدت فلن تبقى خلفية مجردة.
+    const hadLayers = layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
     if (!hasAny) {
       setLoadError("Nothing to flatten — open an image first");
       return;
@@ -1099,6 +1302,7 @@ export default function App() {
       setSelectedTextId(null);
       setSelectedLayer(null);
       setSelectedIds([]);
+      if (hadLayers) pureBackdropRef.current = false;
       pushHistory("Flatten image", { image: next, layers: [], imageLayers: [], shapeLayers: [], solidLayers: [] });
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Flatten failed");
@@ -1127,6 +1331,8 @@ export default function App() {
           solidLayers: selGen.kind === "solid" ? solidLayersRef.current.filter((l) => l.id === selGen.id) : [],
         });
         const next: CanvasImage | null = current ? { ...current, url: dataUrl } : null;
+        // دمج طبقة في الصورة — لم تبقَ خلفية مجردة. قبل pushHistory ليلتقط اللقطة القيمة الصحيحة.
+        pureBackdropRef.current = false;
         if (selGen.kind === "image") {
           const rest = imageLayersRef.current.filter((l) => l.id !== selGen.id);
           setImageLayers(rest);
@@ -1157,6 +1363,7 @@ export default function App() {
       const next = current ? { ...current, url: dataUrl } : null;
       const rest = layers.filter((l) => l.id !== target.id);
       setCanvasImage(next);
+      pureBackdropRef.current = false;
       setTextLayers(rest);
       setSelectedTextId(null);
       pushHistory("Merge down", { image: next, layers: rest });
@@ -1769,6 +1976,7 @@ export default function App() {
         if (!requireImage()) return;
         void handleApply("auto_enhance", {});
         break;
+      case "Pro Enhance":
       case "Pro Enhance ✨":
         if (!requireImage()) return;
         void handleApply("pro_enhance", { strength: 70 });
@@ -1937,6 +2145,8 @@ export default function App() {
       }
       const next = { ...current, url: cleanUrl, width: w, height: h };
       setCanvasImage(next);
+      // الدمج يضيف محتوى فوق الصورة — لم تعد خلفية مجردة.
+      pureBackdropRef.current = false;
       pushHistory(`Blend (${p.mode})`, { image: next });
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Blend failed");
@@ -2001,6 +2211,9 @@ export default function App() {
     setRightTab("layers");
     setZoom(100);
     await stageRef.current?.setStrokes([]).catch(() => undefined);
+    // بعد الـawait مباشرة وقبل الدفع — أقصى قرب بين الضبط والالتقاط.
+    baseBeforeBackdropRef.current = p.baseBeforeBackdrop ?? null;
+    pureBackdropRef.current = p.pureBackdrop === true;
     pushHistory(label, {
       image: p.image ? { ...p.image } : null,
       layers: cloneLayers(p.textLayers),
@@ -2036,7 +2249,64 @@ export default function App() {
   }
 
   function handleExport() {
-    void downloadCurrentImage("export.png");
+    setExportOpen(true);
+  }
+
+  /** تصدير فعلي بصيغة مختارة: دمج كل الطبقات ثم ترميز PNG/JPG/WEBP بجودة محددة. */
+  async function runExport(opts: ExportOptions) {
+    setExportOpen(false);
+    await bakeFlush();
+    const hasAny = imageRef.current || layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
+    if (!hasAny) {
+      setLoadError("No image to save — open an image first");
+      return;
+    }
+    setBusy("Exporting…");
+    try {
+      const fresh = imageRef.current;
+      const png = await exportFlattenedDataUrl({
+        imageUrl: fresh?.url ?? null,
+        width: fresh?.width ?? docSizeRef.current.w,
+        height: fresh?.height ?? docSizeRef.current.h,
+        textLayers: layersRef.current,
+        imageLayers: imageLayersRef.current,
+        shapeLayers: shapeLayersRef.current,
+        solidLayers: solidLayersRef.current,
+        order: orderRef.current,
+      });
+      let out = png;
+      let ext = "png";
+      if (opts.format !== "png") {
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("Export encode failed"));
+          img.src = png;
+        });
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const ctx = c.getContext("2d");
+        if (!ctx) throw new Error("Export encode failed");
+        if (opts.format === "jpeg") {
+          ctx.fillStyle = opts.bg;
+          ctx.fillRect(0, 0, c.width, c.height);
+        }
+        ctx.drawImage(img, 0, 0);
+        out = c.toDataURL(opts.format === "jpeg" ? "image/jpeg" : "image/webp", opts.quality / 100);
+        ext = opts.format === "jpeg" ? "jpg" : "webp";
+      }
+      const a = document.createElement("a");
+      a.href = out;
+      a.download = `lumen-export.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      setLoadError(err instanceof Error && err.message ? err.message : "Export failed");
+    } finally {
+      setBusy(null);
+    }
   }
 
   function handleOpen() {
@@ -2057,6 +2327,10 @@ export default function App() {
     setImageLayers([]);
     setShapeLayers([]);
     setSolidLayers([]);
+    strokeLayersRef.current = [];
+    setStrokeLayers([]);
+    baseBeforeBackdropRef.current = null;
+    pureBackdropRef.current = false;
     setSelectedTextId(null);
     setSelectedLayer(null);
     setSelectedIds([]);
@@ -2086,6 +2360,9 @@ export default function App() {
     setNewCanvasOpen(false);
     setBlankMode(true);
     setCanvasImage(null);
+    // كانفس جديد: أساس خلفية قديم يجب ألا يتسرب إليه.
+    baseBeforeBackdropRef.current = null;
+    pureBackdropRef.current = false;
     setTextLayers([]);
     setImageLayers([]);
     setShapeLayers([]);
@@ -2170,7 +2447,12 @@ export default function App() {
       />
 
       <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden relative">
-        <LeftToolbar activeTool={activeTool} onToolChange={setActiveTool} />
+        <LeftToolbar
+          activeTool={activeTool}
+          onToolChange={setActiveTool}
+          libraryOpen={libraryOpen}
+          onToggleLibrary={() => setLibraryOpen((v) => !v)}
+        />
 
         {activeTool === "shape" && (
           <div
@@ -2257,41 +2539,6 @@ export default function App() {
           </div>
         )}
 
-        {activeTool === "eraser" && (
-          <div
-            style={{
-              position: "absolute",
-              left: 64,
-              bottom: 48,
-              zIndex: 50,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              padding: "10px 14px",
-              borderRadius: 8,
-              minWidth: 220,
-              background: "var(--card)",
-              border: "1px solid var(--border)",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-            }}
-          >
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>
-              Eraser size: {eraserSize}px
-              <input
-                type="range"
-                min={2}
-                max={200}
-                value={eraserSize}
-                onChange={(e) => setEraserSize(Math.max(2, Math.min(200, Math.round(Number(e.target.value)))))}
-                style={{ width: "100%", accentColor: "var(--accent)" }}
-              />
-            </label>
-            <div style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
-              Drag to erase to transparency · [ ] = size (E)
-            </div>
-          </div>
-        )}
-
         <Group
           orientation="horizontal"
           className="flex-1 min-w-0 min-h-0"
@@ -2332,13 +2579,23 @@ export default function App() {
               onUpdateText={handleUpdateText}
               onDeleteText={handleDeleteText}
               onCommitHistory={pushHistory}
-              onSmartSelect={() => void handleRemoveBackground()}
+              onSmartSelect={(fx, fy) => void handleRemoveBackground(fx, fy)}
               selectionMask={selectionMask}
               selectionInverted={selectionInverted}
               onMagicWandSelect={(px, py, add, subtract) => void handleMagicWandPick(px, py, add, subtract)}
               onQuickSelect={(seeds, mode) => void handleQuickSelectFinish(seeds, mode)}
               quickBrush={quickBrush}
               eraserSize={eraserSize}
+              eraserOpacity={eraserOpacity}
+              eraserHardness={eraserHardness}
+              eraserMode={eraserMode}
+              eraserColor={eraserColor}
+              brushSize={brushSize}
+              brushColor={brushColor}
+              brushOpacity={brushOpacity}
+              onStrokeAdded={handleStrokeAdded}
+              onStrokesBaked={handleStrokesBaked}
+              onDropAsset={handleDropAsset}
               shapeKind={shapeKind}
               onShapeDraw={handleShapeDraw}
               showGrid={showGrid}
@@ -2454,6 +2711,23 @@ export default function App() {
                   onOpenImage={handleOpen}
                   onNewCanvas={() => setNewCanvasOpen(true)}
                   onShapeTool={() => setActiveTool("shape")}
+                  activeTool={activeTool}
+                  brushSettings={{ size: brushSize, color: brushColor, opacity: brushOpacity }}
+                  onBrushChange={(patch) => {
+                    if (patch.size !== undefined) setBrushSize(patch.size);
+                    if (patch.color !== undefined) setBrushColor(patch.color);
+                    if (patch.opacity !== undefined) setBrushOpacity(patch.opacity);
+                  }}
+                  eraserSettings={{ size: eraserSize, opacity: eraserOpacity, hardness: eraserHardness, mode: eraserMode, color: eraserColor }}
+                  onEraserChange={(patch) => {
+                    if (patch.size !== undefined) setEraserSize(patch.size);
+                    if (patch.opacity !== undefined) setEraserOpacity(patch.opacity);
+                    if (patch.hardness !== undefined) setEraserHardness(patch.hardness);
+                    if (patch.mode !== undefined) setEraserMode(patch.mode);
+                    if (patch.color !== undefined) setEraserColor(patch.color);
+                  }}
+                  strokeLayers={strokeLayers}
+                  onUpdateStroke={handleUpdateStroke}
                   onMaskAction={maskPanelTarget ? handleMaskAction : undefined}
                   maskState={maskPanelState}
                   onCollapse={() => setRightCollapsed(true)}
@@ -2485,6 +2759,30 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         currentTheme={currentTheme}
         onThemeChange={(id) => setCurrentTheme(id)}
+        exportPrefs={exportPrefs}
+        onExportChange={setExportPrefs}
+      />
+
+      <ExportDialog
+        open={exportOpen}
+        busy={busy}
+        defaults={exportPrefs}
+        onClose={() => setExportOpen(false)}
+        onConfirm={(opts) => {
+          setExportPrefs(opts);
+          try {
+            localStorage.setItem("lumen_export_prefs", JSON.stringify(opts));
+          } catch {
+            /* التخزين اختياري */
+          }
+          void runExport(opts);
+        }}
+      />
+
+      <AssetsDrawer
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onAdd={(asset) => handleAddAsset(asset)}
       />
 
       {menuDialog && imageRef.current && (

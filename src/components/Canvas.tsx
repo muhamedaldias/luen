@@ -23,13 +23,23 @@ interface CanvasProps {
   onUpdateText?: (id: string, patch: Partial<TextLayer>) => void;
   onDeleteText?: (id: string) => void;
   onCommitHistory?: (label: string) => void;
-  onSmartSelect?: () => void;
+  onSmartSelect?: (fx?: number, fy?: number) => void;
   selectionMask?: string | null;
   selectionInverted?: boolean;
   onMagicWandSelect?: (px: number, py: number, add: boolean, subtract: boolean) => void;
   onQuickSelect?: (seeds: Array<{ x: number; y: number }>, mode: "add" | "subtract") => void;
   quickBrush?: number;
   eraserSize?: number;
+  eraserOpacity?: number;
+  eraserHardness?: number;
+  eraserMode?: "transparent" | "color";
+  eraserColor?: string;
+  brushSize?: number;
+  brushColor?: string;
+  brushOpacity?: number;
+  onStrokeAdded?: (stroke: { id: string; name: string; width: number; color: string; opacity: number }) => void;
+  onStrokesBaked?: () => void;
+  onDropAsset?: (assetId: string, at: { nx: number; ny: number }) => void;
   imageLayers?: ImageLayer[];
   shapeLayers?: ShapeLayer[];
   solidLayers?: SolidLayer[];
@@ -58,6 +68,10 @@ export interface FabricStageHandle {
   flushStrokes: () => Promise<string | null>;
   getStrokes: () => object[];
   setStrokes: (objs: object[]) => Promise<void>;
+  /** تعديل ضربة حيّة (عرض/لون/شفافية) من لوحة الخصائص. */
+  updateStroke: (id: string, patch: { width?: number; color?: string; opacity?: number }) => void;
+  /** إزالة ضربة حيّة من الكانفس. */
+  removeStroke: (id: string) => void;
 }
 
 const ZOOM_STEPS = [10, 25, 33, 50, 67, 75, 100, 150, 200, 300, 400];
@@ -76,9 +90,6 @@ const TOOL_CURSORS: Record<string, string> = {
   pan: "grab",
   zoom: "zoom-in",
 };
-
-const BRUSH_COLOR = "#C97B4A";
-const BRUSH_SIZE = 4;
 const BOARD_W = 900;
 const BOARD_H = 600;
 const RULER = 22;
@@ -259,6 +270,16 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   onQuickSelect,
   quickBrush = 40,
   eraserSize = 36,
+  eraserOpacity = 100,
+  eraserHardness = 100,
+  eraserMode = "transparent",
+  eraserColor = "#FFFFFF",
+  brushSize = 4,
+  brushColor = "#C97B4A",
+  brushOpacity = 100,
+  onStrokeAdded,
+  onStrokesBaked,
+  onDropAsset,
     imageLayers = [],
     shapeLayers = [],
     solidLayers = [],
@@ -324,19 +345,35 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     shapeDraw: null,
   });
   const erasing = useRef({ active: false, dirty: false });
-  const eraseSession = useRef<{ el: HTMLCanvasElement; ctx: CanvasRenderingContext2D; lastX: number; lastY: number } | null>(null);
+  const eraseSession = useRef<{ el: HTMLCanvasElement; ctx: CanvasRenderingContext2D; lastX: number; lastY: number; mode: "transparent" | "color" } | null>(null);
+  const dabSprite = useRef<{ key: string; el: HTMLCanvasElement } | null>(null);
+  const strokeCounter = useRef(0);
   const lastCommitted = useRef<string | null>(null);
   const toolRef = useRef(activeTool);
   const zoomRef = useRef(zoom);
   toolRef.current = activeTool;
   zoomRef.current = zoom;
 
-  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange });
-  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange };
+  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange, onStrokeAdded, onStrokesBaked, onDropAsset });
+  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange, onStrokeAdded, onStrokesBaked, onDropAsset };
   const quickBrushRef = useRef(quickBrush);
   quickBrushRef.current = quickBrush;
   const eraserSizeRef = useRef(eraserSize);
   eraserSizeRef.current = eraserSize;
+  const eraserOpacityRef = useRef(eraserOpacity);
+  eraserOpacityRef.current = eraserOpacity;
+  const eraserHardnessRef = useRef(eraserHardness);
+  eraserHardnessRef.current = eraserHardness;
+  const eraserModeRef = useRef(eraserMode);
+  eraserModeRef.current = eraserMode;
+  const eraserColorRef = useRef(eraserColor);
+  eraserColorRef.current = eraserColor;
+  const brushSizeRef = useRef(brushSize);
+  brushSizeRef.current = brushSize;
+  const brushColorRef = useRef(brushColor);
+  brushColorRef.current = brushColor;
+  const brushOpacityRef = useRef(brushOpacity);
+  brushOpacityRef.current = brushOpacity;
   const quickDrag = useRef<{ active: boolean; seeds: Array<{ x: number; y: number }>; subtract: boolean }>({ active: false, seeds: [], subtract: false });
   const shapeKindRef = useRef(shapeKind);
   shapeKindRef.current = shapeKind;
@@ -352,6 +389,14 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   hasImageRef.current = hasImage;
   const orderRef = useRef<{ kind: string; id: string }[] | undefined>(layerOrder);
   orderRef.current = layerOrder;
+
+  useEffect(() => {
+    // إعادة رسم الكانفس عند اكتمال تحميل أي خط — يمنع طباعة النص بخط بديل داخل البكسلات.
+    const rerender = () => fRef.current?.requestRenderAll();
+    void document.fonts.ready.then(rerender);
+    document.fonts.addEventListener("loadingdone", rerender);
+    return () => document.fonts.removeEventListener("loadingdone", rerender);
+  }, []);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -956,11 +1001,6 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     }
   }, [relayout]);
 
-  const commitStrokes = useCallback(async () => {
-    const url = await commitRaster();
-    if (url) handlersRef.current.onEditCommit?.(url);
-  }, [commitRaster]);
-
   function eraseNatural(clientX: number, clientY: number): { nx: number; ny: number } | null {
     const natW = viewRef.current.natW;
     const natH = viewRef.current.natH;
@@ -973,6 +1013,37 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     };
   }
 
+  /** نبضة الممحاة مرسومة مسبقاً على كانفس صغير: التدرّج الشعاعي يجعل الصلابة
+   *  (hardness) هي نصف قطر النواة الصلبة، والشفافية هي ألفا النواة. */
+  function getDabSprite(): HTMLCanvasElement {
+    const size = Math.max(2, Math.round(eraserSizeRef.current));
+    const hardness = Math.max(0, Math.min(100, eraserHardnessRef.current)) / 100;
+    const opacity = Math.max(1, Math.min(100, eraserOpacityRef.current)) / 100;
+    const mode = eraserModeRef.current;
+    const color = mode === "color" ? eraserColorRef.current : "#000000";
+    const key = `${size}|${hardness}|${opacity}|${mode}|${color}`;
+    if (dabSprite.current?.key === key) return dabSprite.current.el;
+    const d = size % 2 === 0 ? size : size + 1;
+    const el = document.createElement("canvas");
+    el.width = d;
+    el.height = d;
+    const ctx = el.getContext("2d");
+    if (ctx) {
+      const r = d / 2;
+      const rgb = color.startsWith("#") ? color.slice(1) : "000000";
+      const rr = parseInt(rgb.slice(0, 2), 16) || 0;
+      const gg = parseInt(rgb.slice(2, 4), 16) || 0;
+      const bb = parseInt(rgb.slice(4, 6), 16) || 0;
+      const g = ctx.createRadialGradient(r, r, r * Math.min(0.999, hardness), r, r, r);
+      g.addColorStop(0, `rgba(${rr},${gg},${bb},${opacity})`);
+      g.addColorStop(1, `rgba(${rr},${gg},${bb},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, d, d);
+    }
+    dabSprite.current = { key, el };
+    return el;
+  }
+
   function eraseDab(nx: number, ny: number): boolean {
     const session = eraseSession.current;
     const natW = viewRef.current.natW;
@@ -982,10 +1053,9 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     if (nx < -r || nx > natW + r || ny < -r || ny > natH + r) return false;
     const ctx = session.ctx;
     ctx.save();
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.beginPath();
-    ctx.arc(nx, ny, r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.globalCompositeOperation = session.mode === "color" ? "source-over" : "destination-out";
+    const sprite = getDabSprite();
+    ctx.drawImage(sprite, nx - r, ny - r, r * 2, r * 2);
     ctx.restore();
     const fc = fRef.current;
     const bg = bgRef.current;
@@ -1035,7 +1105,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       const ctx = el.getContext("2d", { willReadFrequently: true });
       if (!ctx) return false;
       ctx.drawImage(bg.getElement() as CanvasImageSource, 0, 0, el.width, el.height);
-      eraseSession.current = { el, ctx, lastX: start.nx, lastY: start.ny };
+      eraseSession.current = { el, ctx, lastX: start.nx, lastY: start.ny, mode: eraserModeRef.current };
     } catch {
       eraseSession.current = null;
       return false;
@@ -1105,7 +1175,9 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         return fc
           .getObjects()
           .filter((o) => (o as unknown as Record<string, unknown>).isStroke)
-          .map((o) => o.toObject() as object);
+          .map((o) =>
+            (o as unknown as { toObject: (props?: string[]) => object }).toObject(["isStroke", "layerId", "layerKind"])
+          );
       } catch {
         return [];
       }
@@ -1123,7 +1195,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         const enlivened = await util.enlivenObjects<FabricObject>(objs);
         for (const o of enlivened) {
           try {
-            o.set({ selectable: false, evented: false });
+            o.set({ selectable: true, evented: true, strokeUniform: true, objectCaching: false });
             (o as unknown as Record<string, unknown>).isStroke = true;
             fc.add(o);
           } catch {
@@ -1134,6 +1206,34 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       } catch {
         /* فشل الاستعادة — تُتجاهل الضربات */
       }
+    },
+    updateStroke: (id: string, patch: { width?: number; color?: string; opacity?: number }) => {
+      const fc = fRef.current;
+      if (!fc) return;
+      const obj = fc.getObjects().find((o) => {
+        const m = o as unknown as Record<string, unknown>;
+        return m.isStroke === true && m.layerId === id;
+      });
+      if (!obj) return;
+      const p: Record<string, unknown> = {};
+      if (patch.width !== undefined) p.strokeWidth = Math.max(1, patch.width);
+      if (patch.color !== undefined) p.stroke = patch.color;
+      if (patch.opacity !== undefined) p.opacity = Math.max(0, Math.min(1, patch.opacity / 100));
+      p.objectCaching = false;
+      obj.set(p as never);
+      (obj as unknown as { dirty: boolean }).dirty = true;
+      obj.setCoords();
+      fc.requestRenderAll();
+    },
+    removeStroke: (id: string) => {
+      const fc = fRef.current;
+      if (!fc) return;
+      const obj = fc.getObjects().find((o) => {
+        const m = o as unknown as Record<string, unknown>;
+        return m.isStroke === true && m.layerId === id;
+      });
+      if (obj) fc.remove(obj);
+      fc.requestRenderAll();
     },
   }), [commitRaster]);
 
@@ -1245,7 +1345,13 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       if (tool === "smart-select") {
         if (hasImageRef.current) {
           showToast("Removing background…");
-          handlersRef.current.onSmartSelect?.();
+          // تمرير نقرة المستخدم كمرساة للموضوع: أدق تعريف ممكن لما يريد إبقاءه.
+          const p = toStage(e.clientX, e.clientY);
+          const box = viewRef.current.box;
+          const fx = (p.x - box.x) / Math.max(1, box.w);
+          const fy = (p.y - box.y) / Math.max(1, box.h);
+          const inside = fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1;
+          handlersRef.current.onSmartSelect?.(inside ? fx : undefined, inside ? fy : undefined);
         } else {
           showToast("Open an image first — then Smart Select removes its background");
         }
@@ -1325,7 +1431,16 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         return;
       }
       if (tool === "eraser") {
-        eraseBegin(e.clientX, e.clientY);
+        // ادمج الضربات الحيّة أولاً حتى تمسح الممحاة فوقها فعلاً.
+        const hasLiveStrokes =
+          fRef.current?.getObjects().some((o) => (o as unknown as Record<string, unknown>).isStroke) ?? false;
+        void (async () => {
+          if (hasLiveStrokes) {
+            await commitRaster();
+            handlersRef.current.onStrokesBaked?.();
+          }
+          eraseBegin(e.clientX, e.clientY);
+        })();
       }
     };
 
@@ -1506,12 +1621,29 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       const p = (opt as { path?: object }).path;
       if (!p) return;
       try {
-        (p as { set: (o: object) => void }).set({ selectable: false, evented: false });
-        ((p as unknown as Record<string, unknown>).isStroke = true);
+        strokeCounter.current += 1;
+        const id = `stroke-${Date.now().toString(36)}-${strokeCounter.current}`;
+        (p as unknown as { set: (o: object) => void }).set({
+          selectable: true,
+          evented: true,
+          strokeUniform: true,
+          objectCaching: false,
+          opacity: Math.max(0, Math.min(1, brushOpacityRef.current / 100)),
+        });
+        const meta = p as unknown as Record<string, unknown>;
+        meta.isStroke = true;
+        meta.layerId = id;
+        meta.layerKind = "stroke";
+        handlersRef.current.onStrokeAdded?.({
+          id,
+          name: `Stroke ${strokeCounter.current}`,
+          width: brushSizeRef.current,
+          color: brushColorRef.current,
+          opacity: brushOpacityRef.current,
+        });
       } catch {
         /* تجاهل */
       }
-      void commitStrokes();
     }) as never);
     const singleSelect = (opt: unknown) => {
       const sel = (opt as { selected?: object[] }).selected;
@@ -1528,7 +1660,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       const id = t?.layerId;
       const kind = (t?.layerKind as string) || (t?.isBoxRect ? undefined : "text");
       if (typeof id === "string") {
-        if (kind === "image" || kind === "shape") {
+        if (kind === "image" || kind === "shape" || kind === "stroke") {
           handlersRef.current.onSelectLayer?.({ kind, id });
           handlersRef.current.onSelectText?.(null);
         } else {
@@ -1911,8 +2043,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     if (drawing) {
       try {
         const brush = new PencilBrush(fc);
-        brush.color = BRUSH_COLOR;
-        brush.width = BRUSH_SIZE;
+        brush.color = brushColorRef.current;
+        brush.width = brushSizeRef.current;
         fc.freeDrawingBrush = brush;
       } catch {
         /* تجاهل */
@@ -1932,7 +2064,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       /* تجاهل */
     }
     fc.requestRenderAll();
-  }, [activeTool, hasImage]);
+  }, [activeTool, hasImage, brushSize, brushColor]);
 
   useEffect(() => {
     relayout();
@@ -1987,6 +2119,16 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     (e: React.DragEvent) => {
       e.preventDefault();
       setDraggingOver(false);
+      // أصل من مكتبة الأصول: مرّر معرّفه مع موضع الإفلات المُطبَّع
+      const assetId = e.dataTransfer.getData("application/x-lumen-asset");
+      if (assetId) {
+        const p = toStage(e.clientX, e.clientY);
+        const box = viewRef.current.box;
+        const nx = Math.max(0, Math.min(1, (p.x - box.x) / Math.max(1, box.w)));
+        const ny = Math.max(0, Math.min(1, (p.y - box.y) / Math.max(1, box.h)));
+        handlersRef.current.onDropAsset?.(assetId, { nx, ny });
+        return;
+      }
       const file = e.dataTransfer.files[0];
       if (file && file.type.startsWith("image/")) handlersRef.current.onImageDrop?.(file);
     },

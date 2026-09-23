@@ -11,6 +11,7 @@ import {
   Pipette,
   Hand,
   ZoomIn,
+  Images,
 } from "lucide-react";
 
 type ToolId =
@@ -54,16 +55,19 @@ const navTools: Tool[] = [
 interface LeftToolbarProps {
   activeTool?: ToolId;
   onToolChange?: (tool: ToolId) => void;
+  libraryOpen?: boolean;
+  onToggleLibrary?: () => void;
 }
 
-export default function LeftToolbar({ activeTool = "select", onToolChange }: LeftToolbarProps) {
+export default function LeftToolbar({ activeTool = "select", onToolChange, libraryOpen = false, onToggleLibrary }: LeftToolbarProps) {
   return (
     <div
-      className="flex flex-col items-center py-3 gap-2 h-full"
+      className="flex flex-col items-center py-3 gap-2 h-full overflow-y-auto overflow-x-hidden"
       style={{
         width: 72,
         background: "var(--card)",
         borderRight: "1px solid var(--border)",
+        scrollbarWidth: "thin",
       }}
     >
       {tools.map((tool) => (
@@ -74,6 +78,10 @@ export default function LeftToolbar({ activeTool = "select", onToolChange }: Lef
           onClick={() => onToolChange?.(tool.id)}
         />
       ))}
+
+      {/* Library — قسم إدراج المحتوى (ليس أداة) */}
+      <div className="w-7 my-1" style={{ borderTop: "1px solid var(--border)" }} />
+      <LibraryButton open={libraryOpen} onClick={onToggleLibrary} />
 
       {/* Divider */}
       <div className="w-7 my-1" style={{ borderTop: "1px solid var(--border)" }} />
@@ -86,6 +94,56 @@ export default function LeftToolbar({ activeTool = "select", onToolChange }: Lef
           onClick={() => onToolChange?.(tool.id)}
         />
       ))}
+    </div>
+  );
+}
+
+function LibraryButton({ open, onClick }: { open: boolean; onClick?: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div className="relative flex items-center">
+      <button
+        onClick={onClick}
+        aria-pressed={open}
+        className="flex items-center justify-center rounded transition-all duration-100"
+        style={{
+          width: 48,
+          height: 48,
+          color: open || hovered ? "var(--accent)" : "var(--muted-foreground)",
+          background: open
+            ? "color-mix(in srgb, var(--accent) 18%, transparent)"
+            : hovered
+              ? "var(--secondary)"
+              : "color-mix(in srgb, var(--accent) 7%, transparent)",
+          border: open ? "1px solid color-mix(in srgb, var(--accent) 45%, transparent)" : "1px solid transparent",
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        title="Asset Library"
+        aria-label="Asset Library"
+      >
+        <Images size={18} strokeWidth={1.75} />
+      </button>
+
+      {hovered && (
+        <div
+          className="absolute left-full ml-3 px-2.5 py-1 text-sm whitespace-nowrap z-50 pointer-events-none flex items-center gap-2"
+          style={{
+            background: "var(--elevated)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            color: "var(--foreground)",
+          }}
+        >
+          Library
+          <span
+            className="text-sm px-1.5 rounded"
+            style={{ color: "var(--muted-foreground)", background: "var(--secondary)", fontFamily: "monospace" }}
+          >
+            L
+          </span>
+        </div>
+      )}
     </div>
   );
 }

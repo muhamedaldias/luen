@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Almarai:wght@400;700&family=Amiri:wght@400;700&family=Anton&family=Bebas+Neue&family=Cairo:wght@400;700&family=Caveat:wght@400;700&family=Cinzel:wght@400;700&family=Cormorant+Garamond:wght@400;700&family=DM+Sans:wght@400;700&family=Dancing+Script:wght@400;700&family=Fredoka:wght@400;700&family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;700&family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&family=Libre+Baskerville:wght@400;700&family=Lobster&family=Lora:wght@400;700&family=Manrope:wght@400;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;700&family=Noto+Kufi+Arabic:wght@400;700&family=Nunito+Sans:wght@400;700&family=Open+Sans:wght@400;700&family=Oswald:wght@400;700&family=Pacifico&family=PT+Serif:wght@400;700&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;700&family=Reem+Kufi:wght@400;700&family=Righteous&family=Roboto:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Tajawal:wght@400;700&family=Work+Sans:wght@400;700&display=swap');
 @import 'tailwindcss';
 
 @theme inline {
@@ -135,4 +135,73 @@ body {
 [role="separator"][data-resize-handle-active] .separator-line {
   background: var(--accent) !important;
   width: 2px !important;
+}
+
+/* Menu hover info card */
+@keyframes menu-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes menu-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.menu-card-shimmer {
+  background: linear-gradient(100deg, var(--secondary) 40%, var(--border) 50%, var(--secondary) 60%);
+  background-size: 200% 100%;
+  animation: menu-shimmer 1.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-card-shimmer {
+    animation: none;
+  }
+  [data-menu-card] {
+    animation: none !important;
+  }
+}
+
+/* درج مكتبة الأصول */
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.drawer-in {
+  animation: drawer-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-in {
+    animation: none;
+  }
+}
+
+/* خلفية الشطرنج لمعاينة المنتجات الشفافة */
+.checker-bg {
+  background-color: #232220;
+  background-image: linear-gradient(45deg, #2a2927 25%, transparent 25%),
+    linear-gradient(-45deg, #2a2927 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2a2927 75%),
+    linear-gradient(-45deg, transparent 75%, #2a2927 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
 }

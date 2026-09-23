@@ -34,10 +34,12 @@ import {
   Underline,
   RotateCcw,
   ChevronRight,
+  Brush,
+  Eraser,
   Image as ImageIcon,
 } from "lucide-react";
-import { FONT_OPTIONS, WEIGHT_OPTIONS, gradientCss, type TextLayer } from "../lib/textLayers";
-import type { ImageLayer, ShapeLayer, SolidLayer } from "../lib/layers";
+import { FONT_LIBRARY, FONT_OPTIONS, WEIGHT_OPTIONS, gradientCss, type TextLayer } from "../lib/textLayers";
+import type { ImageLayer, ShapeLayer, SolidLayer, StrokeLayer } from "../lib/layers";
 import { BLEND_MODES, type LayerRef } from "../lib/layerSystem";
 
 type TabId = "layers" | "design" | "adjustments" | "history";
@@ -96,6 +98,13 @@ interface RightPanelProps {
   onShapeTool?: () => void;
   onMaskAction?: (a: MaskAction) => void;
   maskState?: { hasMask: boolean; enabled: boolean } | null;
+  activeTool?: string;
+  brushSettings?: { size: number; color: string; opacity: number };
+  onBrushChange?: (patch: { size?: number; color?: string; opacity?: number }) => void;
+  eraserSettings?: { size: number; opacity: number; hardness: number; mode: "transparent" | "color"; color: string };
+  onEraserChange?: (patch: { size?: number; opacity?: number; hardness?: number; mode?: "transparent" | "color"; color?: string }) => void;
+  strokeLayers?: StrokeLayer[];
+  onUpdateStroke?: (id: string, patch: Partial<StrokeLayer>) => void;
 }
 
 export default function RightPanel({
@@ -144,12 +153,20 @@ export default function RightPanel({
   onShapeTool,
   onMaskAction,
   maskState = null,
+  activeTool = "select",
+  brushSettings,
+  onBrushChange,
+  eraserSettings,
+  onEraserChange,
+  strokeLayers = [],
+  onUpdateStroke,
   onCollapse,
 }: RightPanelProps) {
   const selected = textLayers.find((t) => t.id === selectedTextId) ?? null;
   const selImg = imageLayers.find((l) => selectedLayer?.kind === "image" && l.id === selectedLayer.id) ?? null;
   const selShape = shapeLayers.find((l) => selectedLayer?.kind === "shape" && l.id === selectedLayer.id) ?? null;
   const selSolid = solidLayers.find((l) => selectedLayer?.kind === "solid" && l.id === selectedLayer.id) ?? null;
+  const selStroke = strokeLayers.find((l) => selectedLayer?.kind === "stroke" && l.id === selectedLayer.id) ?? null;
 
   return (
     <div
@@ -275,6 +292,13 @@ export default function RightPanel({
             onShapeTool={onShapeTool}
             onMaskAction={onMaskAction}
             maskState={maskState}
+            activeTool={activeTool}
+            brushSettings={brushSettings}
+            onBrushChange={onBrushChange}
+            eraserSettings={eraserSettings}
+            onEraserChange={onEraserChange}
+            selStroke={selStroke}
+            onUpdateStroke={onUpdateStroke}
           />
         )}
         {activeTab === "adjustments" && (
@@ -284,45 +308,34 @@ export default function RightPanel({
       </div>
 
       <div className="shrink-0 px-3 py-2.5 w-full" style={{ borderTop: "1px solid var(--border)", minWidth: 0 }}>
-        {selected && onUpdateText ? (
-          <FooterGeometry
-            name={selected.name}
-            x={selected.x} y={selected.y} w={selected.w} rotation={selected.rotation}
-            docW={docWidth} docH={docHeight}
-            onPatch={(p) => onUpdateText(selected.id, p)}
-          />
-        ) : selImg && onUpdateImageLayer ? (
-          <FooterGeometry
-            name={selImg.name}
-            x={selImg.x} y={selImg.y} w={selImg.w} rotation={selImg.rotation}
-            docW={docWidth} docH={docHeight}
-            onPatch={(p) => onUpdateImageLayer(selImg.id, p as Partial<ImageLayer>)}
-          />
-        ) : selShape && onUpdateShapeLayer ? (
-          <FooterGeometry
-            name={selShape.name}
-            x={selShape.x} y={selShape.y} w={selShape.w} rotation={selShape.rotation}
-            docW={docWidth} docH={docHeight}
-            onPatch={(p) => onUpdateShapeLayer(selShape.id, p as Partial<ShapeLayer>)}
-          />
-        ) : selSolid ? (
-          <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
-            <p className="text-xs truncate" style={{ color: "var(--foreground)", minWidth: 0 }}>{selSolid.name}</p>
-            <p className="text-xs shrink-0 ml-2" style={{ color: "var(--accent)", fontSize: 10 }}>Fill · {selSolid.opacity}%</p>
-          </div>
-        ) : selectedIds.length > 1 ? (
-          <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
-            <p className="text-xs truncate" style={{ color: "var(--accent)", fontWeight: 600, minWidth: 0 }}>{selectedIds.length} layers selected</p>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
-            <p className="text-xs truncate" style={{ color: "var(--muted-foreground)", minWidth: 0 }}>
-              {textLayers.length + imageLayers.length + shapeLayers.length + solidLayers.length === 0
-                ? "Empty canvas — open an image or add a layer"
-                : "Select any layer to edit its geometry here"}
-            </p>
-          </div>
-        )}
+        {(() => {
+          // الهندسة (X/Y/W/°) تُعرض في تبويب Design — التذييل يبقى للحالات الفريدة فقط.
+          if (selSolid) {
+            return (
+              <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
+                <p className="text-xs truncate" style={{ color: "var(--foreground)", minWidth: 0 }}>{selSolid.name}</p>
+                <p className="text-xs shrink-0 ml-2" style={{ color: "var(--accent)", fontSize: 10 }}>Fill · {selSolid.opacity}%</p>
+              </div>
+            );
+          }
+          if (selectedIds.length > 1) {
+            return (
+              <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
+                <p className="text-xs truncate" style={{ color: "var(--accent)", fontWeight: 600, minWidth: 0 }}>{selectedIds.length} layers selected</p>
+              </div>
+            );
+          }
+          if (selected || selImg || selShape) return null;
+          return (
+            <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
+              <p className="text-xs truncate" style={{ color: "var(--muted-foreground)", minWidth: 0 }}>
+                {textLayers.length + imageLayers.length + shapeLayers.length + solidLayers.length === 0
+                  ? "Empty canvas — open an image or add a layer"
+                  : "Select any layer to edit its geometry in the Design tab"}
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       <ComparisonStrip />
@@ -933,8 +946,15 @@ function DesignInspector(props: {
   onShapeTool?: () => void;
   onMaskAction?: (a: MaskAction) => void;
   maskState?: { hasMask: boolean; enabled: boolean } | null;
+  activeTool?: string;
+  brushSettings?: { size: number; color: string; opacity: number };
+  onBrushChange?: (patch: { size?: number; color?: string; opacity?: number }) => void;
+  eraserSettings?: { size: number; opacity: number; hardness: number; mode: "transparent" | "color"; color: string };
+  onEraserChange?: (patch: { size?: number; opacity?: number; hardness?: number; mode?: "transparent" | "color"; color?: string }) => void;
+  selStroke?: StrokeLayer | null;
+  onUpdateStroke?: (id: string, patch: Partial<StrokeLayer>) => void;
 }) {
-  const { selected, selImg, selShape, selSolid, multiCount } = props;
+  const { selected, selImg, selShape, selSolid, selStroke, multiCount } = props;
   if (multiCount > 1) {
     return <MultiSelectPanel count={multiCount} onAlign={props.onAlign} onDistribute={props.onDistribute} onGroup={props.onGroup} />;
   }
@@ -1097,6 +1117,32 @@ function DesignInspector(props: {
       </div>
     );
   }
+  if (selStroke && props.onUpdateStroke) {
+    const up = (patch: Partial<StrokeLayer>) => props.onUpdateStroke!(selStroke.id, patch);
+    return (
+      <div className="w-full" style={{ minWidth: 0 }}>
+        <InspectorHeader
+          icon={<PenTool size={15} strokeWidth={1.75} style={{ color: "var(--accent)" }} />}
+          typeLabel="Brush stroke"
+          name={selStroke.name}
+        />
+        <div className="py-2 px-3 w-full" style={{ minWidth: 0 }}>
+          <Section title="Stroke">
+            <ColorRow label="Color" value={selStroke.color} onChange={(v) => up({ color: v })} />
+            <SliderRow label="Width" value={selStroke.width} min={1} max={100} onChange={(v) => up({ width: Math.round(v) })} suffix="px" />
+          </Section>
+          <Section title="Appearance">
+            <SliderRow label="Opacity" value={selStroke.opacity} min={0} max={100} onChange={(v) => up({ opacity: Math.round(v) })} suffix="%" />
+          </Section>
+          <Section title="Layer">
+            <div className="flex gap-1.5 mt-1.5">
+              <button onClick={() => props.onDeleteGeneric?.("stroke", selStroke.id)} className="flex-1 h-9 rounded text-xs font-medium" style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--border)", cursor: "pointer" }}>Delete</button>
+            </div>
+          </Section>
+        </div>
+      </div>
+    );
+  }
   if (selected && props.onUpdateText) {
     return (
       <div className="w-full" style={{ minWidth: 0 }}>
@@ -1123,6 +1169,83 @@ function DesignInspector(props: {
           docW={props.docWidth}
           docH={props.docHeight}
         />
+      </div>
+    );
+  }
+  if (props.activeTool === "brush" && props.brushSettings && props.onBrushChange) {
+    const b = props.brushSettings;
+    return (
+      <div className="w-full" style={{ minWidth: 0 }}>
+        <InspectorHeader
+          icon={<Brush size={15} strokeWidth={1.75} style={{ color: "var(--accent)" }} />}
+          typeLabel="Brush tool"
+          name="Brush settings"
+        />
+        <div className="py-2 px-3 w-full" style={{ minWidth: 0 }}>
+          <Section title="Brush">
+            <SliderRow label="Size" value={b.size} min={1} max={100} onChange={(v) => props.onBrushChange!({ size: Math.round(v) })} suffix="px" />
+            <ColorRow label="Color" value={b.color} onChange={(v) => props.onBrushChange!({ color: v })} />
+            <SliderRow label="Opacity" value={b.opacity} min={1} max={100} onChange={(v) => props.onBrushChange!({ opacity: Math.round(v) })} suffix="%" />
+          </Section>
+          <p className="text-[11px] px-3 pt-2 leading-snug" style={{ color: "var(--muted-foreground)" }}>
+            Draw on the canvas. Switch to Select and click a stroke to edit it afterwards.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  if (props.activeTool === "eraser" && props.eraserSettings && props.onEraserChange) {
+    const e = props.eraserSettings;
+    return (
+      <div className="w-full" style={{ minWidth: 0 }}>
+        <InspectorHeader
+          icon={<Eraser size={15} strokeWidth={1.75} style={{ color: "var(--accent)" }} />}
+          typeLabel="Eraser tool"
+          name="Eraser settings"
+        />
+        <div className="py-2 px-3 w-full" style={{ minWidth: 0 }}>
+          <Section title="Erase to">
+            <div className="flex gap-1 w-full" style={{ minWidth: 0 }}>
+              <button
+                onClick={() => props.onEraserChange!({ mode: "transparent" })}
+                className="flex-1 h-8 rounded text-xs"
+                style={{
+                  background: e.mode === "transparent" ? "var(--accent)" : "var(--secondary)",
+                  color: e.mode === "transparent" ? "var(--accent-foreground)" : "var(--muted-foreground)",
+                  border: "1px solid var(--border)",
+                  cursor: "pointer",
+                  fontWeight: e.mode === "transparent" ? 600 : 400,
+                  minWidth: 0,
+                }}
+              >
+                Transparency
+              </button>
+              <button
+                onClick={() => props.onEraserChange!({ mode: "color" })}
+                className="flex-1 h-8 rounded text-xs"
+                style={{
+                  background: e.mode === "color" ? "var(--accent)" : "var(--secondary)",
+                  color: e.mode === "color" ? "var(--accent-foreground)" : "var(--muted-foreground)",
+                  border: "1px solid var(--border)",
+                  cursor: "pointer",
+                  fontWeight: e.mode === "color" ? 600 : 400,
+                  minWidth: 0,
+                }}
+              >
+                Solid color
+              </button>
+            </div>
+            {e.mode === "color" && <ColorRow label="Color" value={e.color} onChange={(v) => props.onEraserChange!({ color: v })} />}
+          </Section>
+          <Section title="Brush">
+            <SliderRow label="Size" value={e.size} min={2} max={200} onChange={(v) => props.onEraserChange!({ size: Math.round(v) })} suffix="px" />
+            <SliderRow label="Opacity" value={e.opacity} min={1} max={100} onChange={(v) => props.onEraserChange!({ opacity: Math.round(v) })} suffix="%" />
+            <SliderRow label="Hardness" value={e.hardness} min={0} max={100} onChange={(v) => props.onEraserChange!({ hardness: Math.round(v) })} suffix="%" />
+          </Section>
+          <p className="text-[11px] px-3 pt-2 leading-snug" style={{ color: "var(--muted-foreground)" }}>
+            [ ] resizes · E toggles the tool. Transparency exports with alpha; solid color avoids black areas.
+          </p>
+        </div>
       </div>
     );
   }
@@ -1218,12 +1341,21 @@ function DesignTab({
         <label className="text-xs block mb-1" style={{ color: "var(--muted-foreground)" }}>Font family</label>
         <select
           value={layer.fontFamily}
-          onChange={(e) => up({ fontFamily: e.target.value })}
+          onChange={(e) => {
+            up({ fontFamily: e.target.value });
+            const fam = e.target.value.split(",")[0].replace(/['"]/g, "").trim();
+            void document.fonts.load(`400 16px "${fam}"`).catch(() => undefined);
+            void document.fonts.load(`700 16px "${fam}"`).catch(() => undefined);
+          }}
           className="w-full h-9 rounded text-xs outline-none"
           style={{ background: "var(--secondary)", border: "1px solid var(--border)", color: "var(--foreground)", padding: "0 8px", minWidth: 0 }}
         >
-          {FONT_OPTIONS.map((f) => (
-            <option key={f.label} value={f.value}>{f.label}</option>
+          {FONT_LIBRARY.map((group) => (
+            <optgroup key={group.category} label={group.category}>
+              {group.fonts.map((f) => (
+                <option key={f.label} value={f.value}>{f.label}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <SliderRow label="Size" value={layer.fontSize} min={8} max={120} onChange={(v) => up({ fontSize: Math.round(v) })} suffix="px" />
@@ -2035,31 +2167,6 @@ function Slider({ min, max, value, step = 1, onChange }: { min: number; max: num
           background: transparent;
         }
       `}</style>
-    </div>
-  );
-}
-
-function FooterGeometry({ name, x, y, w, rotation, docW, docH, onPatch }: {
-  name: string; x: number; y: number; w: number; rotation: number;
-  docW: number; docH: number;
-  onPatch: (p: { x?: number; y?: number; w?: number; rotation?: number }) => void;
-}) {
-  const W = Math.max(1, docW);
-  const H = Math.max(1, docH);
-  return (
-    <div style={{ minWidth: 0 }}>
-      <div className="flex items-center justify-between mb-2" style={{ minWidth: 0 }}>
-        <p className="text-xs font-medium truncate" style={{ color: "var(--foreground)", minWidth: 0 }}>{name}</p>
-        <span className="text-xs shrink-0 ml-2 tabular-nums" style={{ color: "var(--accent)", fontSize: 11 }}>
-          {Math.round(x * W)},{Math.round(y * H)} · {Math.round(rotation)}°
-        </span>
-      </div>
-      <div className="grid grid-cols-2 gap-1.5" style={{ minWidth: 0 }}>
-        <MiniNumber label="X" value={Math.round(x * W)} onChange={(v) => onPatch({ x: v / W })} />
-        <MiniNumber label="Y" value={Math.round(y * H)} onChange={(v) => onPatch({ y: v / H })} />
-        <MiniNumber label="W" value={Math.round(w * W)} onChange={(v) => onPatch({ w: Math.max(2, v) / W })} />
-        <MiniNumber label="°" value={Math.round(rotation)} onChange={(v) => onPatch({ rotation: Math.max(-180, Math.min(180, Math.round(v))) })} />
-      </div>
     </div>
   );
 }
