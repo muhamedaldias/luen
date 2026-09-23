@@ -1,0 +1,25 @@
+# ==============================================================================
+# Lumen Backend — Python Dependencies & Requirements
+# ==============================================================================
+# Web Framework & API Server
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.30.0,<1.0.0
+python-multipart>=0.0.9
+pydantic-settings>=2.4.0
+
+# Computer Vision & Image Processing Core
+pillow>=10.0.0,<12.0.0
+opencv-python>=4.10.0,<5.0.0
+numpy>=1.26.0,<3.0.0
+
+# Database & Migrations
+SQLAlchemy>=2.0.30,<3.0.0
+alembic>=1.13.0,<2.0.0
+
+# AI Background Removal & Machine Learning Runtime
+rembg>=2.0.60,<3.0.0
+onnxruntime>=1.19.0
+
+# Testing & HTTP Client
+pytest>=8.0.0,<9.0.0
+httpx>=0.27.0,<1.0.0
