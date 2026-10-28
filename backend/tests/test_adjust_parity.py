@@ -84,3 +84,20 @@ def test_adjust_honours_whites_and_blacks(client):
     blacks = _mean_luma(client, _adjust(client, image["image_id"], blacks=100))
     assert whites > neutral, f"whites was ignored: {neutral:.1f} -> {whites:.1f}"
     assert blacks > neutral, f"blacks was ignored: {neutral:.1f} -> {blacks:.1f}"
+
+
+def test_adjust_without_params_does_not_alter_the_image(client):
+    """An empty adjust has to round-trip the image, not return a black frame.
+
+    The Lab step used to call cvtColor on float32 pixels that were still scaled
+    0-255. OpenCV reads float RGB as 0-1, so the round-trip left the valid range
+    and every backend-side adjust came back black. Only a pixel comparison
+    catches this: the operation still returned 200 with a decodable PNG.
+    """
+    image = _upload(client)
+    neutral = _mean_luma(client, _adjust(client, image["image_id"]))
+    # make_png_bytes fills the frame with rgb(200, 120, 40); this is its luma.
+    expected = 0.299 * 200 + 0.587 * 120 + 0.114 * 40
+    assert abs(neutral - expected) < 6, (
+        f"empty adjust altered the image: luma {neutral:.1f}, expected about {expected:.1f}"
+    )

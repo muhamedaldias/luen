@@ -163,9 +163,7 @@ def adjust(image_id: str, user_id: str, params: dict) -> str:
 
         base = base.filter(ImageFilter.GaussianBlur(radius=min(20.0, max(0.0, blur_v / 5.0))))
 
-    rgb = np.array(base, dtype=np.float32)
-    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
-    l_channel = lab[:, :, 0]
+    rgb = np.array(base)  # uint8, 0-255
 
     # Exposure: linear gain in EV stops, identical to the local path in
     # src/lib/localOps.ts (-100 -> 2^-2 = 0.25x, +100 -> 2^+2 = 4x). The UI has
@@ -174,9 +172,16 @@ def adjust(image_id: str, user_id: str, params: dict) -> str:
     exposure = _float_params(params, "exposure", 0)
     if exposure:
         gain = float(2.0 ** (max(-100.0, min(100.0, exposure)) / 50.0))
-        rgb = np.clip(rgb * gain, 0, 255)
-        lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
-        l_channel = lab[:, :, 0]
+        rgb = np.clip(rgb.astype(np.float32) * gain, 0, 255).astype(np.uint8)
+
+    # Convert through OpenCV's 8-bit Lab so L comes back on 0-255, the range
+    # every curve below is written against. Feeding float32 RGB that still holds
+    # 0-255 makes OpenCV read those values as if they were 0-1, and the Lab
+    # round-trip then leaves the valid range: the result comes back black. That
+    # silently corrupted every backend-side adjust until the parity tests in
+    # tests/test_adjust_parity.py started comparing pixels instead of statuses.
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+    l_channel = lab[:, :, 0]
 
     if brightness:
         l_channel = np.clip(l_channel + brightness, 0, 255)
@@ -201,8 +206,8 @@ def adjust(image_id: str, user_id: str, params: dict) -> str:
         l_channel = _whites_blacks_curve(l_channel, whites, blacks)
 
     lab[:, :, 0] = l_channel
-    rgb_out = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
-    result = Image.fromarray(np.clip(rgb_out, 0, 255).astype(np.uint8))
+    rgb_out = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB)
+    result = Image.fromarray(rgb_out)
 
     if temperature:
         arr = np.array(result, dtype=np.float32)
