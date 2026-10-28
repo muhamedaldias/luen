@@ -39,12 +39,12 @@ def _get_session():
 
 
 def remove_background(image_id: str, user_id: str, params: dict) -> str:
-    """إزالة خلفية: rembg (إن ثُبّت لاحقاً) وإلا GrabCut من OpenCV — يعمل الآن."""
+    """Background removal: rembg (when installed) otherwise OpenCV GrabCut — works today."""
     if _is_rembg_available():
         try:
             return _rembg_path(image_id, user_id)
         except Exception:
-            pass  # تراجع تلقائي إلى OpenCV
+            pass  # automatic fallback to OpenCV
     return _grabcut_path(image_id, user_id)
 
 
@@ -72,7 +72,7 @@ def _grabcut_path(image_id: str, user_id: str) -> str:
     if min(h, w) < 8:
         raise ValueError("image too small for background removal")
 
-    # عمل مصغّر للسرعة (أطول ضلع 800) ثم إعادة القناع للأصل
+    # Downscale for speed (longest side 800), then scale the mask back to the original
     scale = min(1.0, 800.0 / max(h, w))
     small = rgb if scale >= 1.0 else cv2.resize(rgb, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
     sh, sw = small.shape[:2]
@@ -90,7 +90,7 @@ def _grabcut_path(image_id: str, user_id: str) -> str:
     fg = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
     ratio = float(fg.mean()) / 255.0
     if ratio < 0.02 or ratio > 0.98:
-        # تراجع آمن: قطع ناقص مركزي بدل قناع منحل
+        # Safe fallback: a central elliptical crop instead of a degenerate mask
         fg = np.zeros((sh, sw), np.uint8)
         cv2.ellipse(fg, (sw // 2, sh // 2), (int(sw * 0.38), int(sh * 0.38)), 0, 0, 360, 255, -1)
 
@@ -100,9 +100,9 @@ def _grabcut_path(image_id: str, user_id: str) -> str:
     kernel = np.ones((3, 3), np.uint8)
     fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, kernel, iterations=1)
     fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, kernel, iterations=2)
-    fg = cv2.GaussianBlur(fg, (5, 5), 0)  # تنعيم الحواف
+    fg = cv2.GaussianBlur(fg, (5, 5), 0)  # edge smoothing
 
-    # دمج شفافية الأصل (إن وجدت) مع قناع المقدمة
+    # Combine the original transparency (when present) with the foreground mask
     alpha = np.minimum(orig_alpha, fg).astype(np.uint8)
     out = np.array(img)
     out[:, :, 3] = alpha

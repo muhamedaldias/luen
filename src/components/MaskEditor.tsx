@@ -7,7 +7,7 @@ interface MaskEditorProps {
   onApply: (maskDataUrl: string) => void;
 }
 
-/** رسم قناع أبيض فوق الصورة لإزالة العنصر (inpaint)। */
+/** Paints a white mask over the image to remove the subject (inpaint). */
 export default function MaskEditor({ imageUrl, busy = false, onClose, onApply }: MaskEditorProps) {
   const [brush, setBrush] = useState(28);
   const imgRef = useRef<HTMLImageElement>(null);

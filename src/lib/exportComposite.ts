@@ -4,11 +4,11 @@ import type { ImageLayer, ShapeLayer, SolidLayer } from "./layers";
 import { effectiveMask, maskUrlToAlphaCanvas, type LayerMask } from "./layers";
 import { normBlend, type LayerRef } from "./layerSystem";
 
-/* تصدير مسطّح آمن 100% من التلوّث (taint-free):
- * - لا يستخدم SVG foreignObject أبداً (هو السبب الأول لخطأ
+/* A 100% taint-free flattened export:
+ * - Never uses SVG foreignObject (the primary cause of the
  *   "failed to execute 'toDataURL' ... tainted canvases may not be exported").
- * - كل الرسم يتم عبر Canvas2D مباشرة (نص + صورة + شكل + لون).
- * - تحميل الصور عبر loadCleanImage (بدون crossOrigin للـ data:/blob:/relative).
+ * - All drawing goes straight through Canvas2D (text + image + shape + color).
+ * - Images are loaded through loadCleanImage (no crossOrigin for data:/blob:/relative).
  */
 
 export interface FlattenOpts {
@@ -80,7 +80,7 @@ export async function exportFlattenedDataUrl(opts: FlattenOpts): Promise<string>
       ctx.globalAlpha = Math.max(0, Math.min(1, s.opacity / 100));
       try {
         ctx.globalCompositeOperation = normBlend(s.blendMode) as GlobalCompositeOperation;
-      } catch { /* تجاهل */ }
+      } catch { /* ignore */ }
       ctx.fillStyle = s.color;
       ctx.fillRect(0, 0, W, H);
       ctx.restore();
@@ -109,7 +109,7 @@ export async function exportFlattenedDataUrl(opts: FlattenOpts): Promise<string>
         ctx.globalAlpha = Math.max(0, Math.min(1, l.opacity / 100));
         try {
           ctx.globalCompositeOperation = normBlend(l.blendMode) as GlobalCompositeOperation;
-        } catch { /* تجاهل */ }
+        } catch { /* ignore */ }
         if (l.rotation) {
           ctx.translate(dx + dw / 2, dy + dh / 2);
           ctx.rotate((l.rotation * Math.PI) / 180);
@@ -133,7 +133,7 @@ export async function exportFlattenedDataUrl(opts: FlattenOpts): Promise<string>
       await destinationInMask(o, m, dx, dy, dw, dh, l.rotation || 0);
       compositeOffscreen(ctx, l.opacity, l.blendMode, off);
     } catch {
-      /* طبقة تالفة تُتجاهل — لا تفشل التصدير كله */
+      /* A corrupt layer is skipped — it must not fail the whole export */
     }
   }
 
@@ -158,7 +158,7 @@ export async function exportFlattenedDataUrl(opts: FlattenOpts): Promise<string>
         if (l && l.visible) {
           try {
             await drawLayerCanvas(ctx, W, H, l, scale);
-          } catch { /* تجاهل */ }
+          } catch { /* ignore */ }
         }
       }
     }
@@ -174,12 +174,12 @@ export async function exportFlattenedDataUrl(opts: FlattenOpts): Promise<string>
       try {
         await drawLayerCanvas(ctx, W, H, l, scale);
       } catch {
-        /* تجاهل الطبقة التالفة */
+        /* ignore the corrupt layer */
       }
     }
   }
-  // toDataURL هنا آمن دائماً: كل المصادر نظيفة (data/blob/same-origin CORS-clean)
-  // ولا يوجد أي SVG foreignObject.
+  // toDataURL is always safe here: every source is clean (data/blob/same-origin CORS-clean)
+  // and there is no SVG foreignObject anywhere.
   try {
     return canvas.toDataURL("image/png");
   } catch (e) {
@@ -213,7 +213,7 @@ function compositeOffscreen(
   ctx.globalAlpha = Math.max(0, Math.min(1, layerOpacityPct / 100));
   try {
     ctx.globalCompositeOperation = normBlend(blend) as GlobalCompositeOperation;
-  } catch { /* تجاهل */ }
+  } catch { /* ignore */ }
   ctx.drawImage(off, 0, 0);
   ctx.restore();
 }
@@ -261,7 +261,7 @@ async function drawShapeCanvas(ctx: CanvasRenderingContext2D, W: number, H: numb
     c.globalAlpha = Math.max(0, Math.min(1, s.opacity / 100));
     try {
       c.globalCompositeOperation = normBlend(s.blendMode) as GlobalCompositeOperation;
-    } catch { /* تجاهل */ }
+    } catch { /* ignore */ }
   }
   c.translate(dx + dw / 2, dy + dh / 2);
   c.rotate(((s.rotation || 0) * Math.PI) / 180);
@@ -318,11 +318,11 @@ async function drawShapeCanvas(ctx: CanvasRenderingContext2D, W: number, H: numb
 }
 
 async function drawLayerCanvas(ctx: CanvasRenderingContext2D, W: number, H: number, l: TextLayer, scale: number) {
-  // انتظار الخطوط قبل القياس لتفادي اختلاف العرض بين المعاينة والتصدير
+  // Wait for fonts before measuring so preview and export widths match
   try {
     if (document.fonts?.ready) await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 300))]);
   } catch {
-    /* تجاهل */
+    /* ignore */
   }
   const boxW = l.w * W;
   const left = l.x * W;
@@ -338,7 +338,7 @@ async function drawLayerCanvas(ctx: CanvasRenderingContext2D, W: number, H: numb
     c.globalAlpha = l.opacity / 100;
     try {
       c.globalCompositeOperation = normBlend((l as { blendMode?: unknown }).blendMode) as GlobalCompositeOperation;
-    } catch { /* تجاهل */ }
+    } catch { /* ignore */ }
   }
   if (l.blur > 0) c.filter = `blur(${l.blur * scale}px)`;
   const cx = left + boxW / 2;

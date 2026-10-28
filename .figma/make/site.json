@@ -1,10 +1,12 @@
 {
-  "description": "This web application streamlines task execution with precision, enabling teams to enhance productivity and ensure accuracy in project management.",
+  "title": "Lumen — Photo Editor",
+  "description": "Lumen is a high-performance photo editor with in-browser AI background removal, layers, filters, and professional image blending.",
+  "language": "en",
   "robots": {
-    "index": false
+    "index": true
   },
   "accessibility": {
-    "addBypassLinks": false,
+    "addBypassLinks": true,
     "ignoreReducedMotion": false
   }
 }

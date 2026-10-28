@@ -1,20 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller bundle for the Lumen FastAPI backend.
 
-تجربة الدخان المبكرة (موصى بها من الوثيقة):
+Early smoke test (recommended by the docs):
     cd backend
     pip install pyinstaller
     pyinstaller lumen.spec --noconfirm
 
-ملاحظة: مكتبات cv2/rembg/PIL لا تُكتشف تلقائياً بالكامل —
-لهذا أُضيفت hiddenimports و datas صريحة أدناه.
-نموذج rembg (~44-176MB) يُنزَّل عند أول تشغيل ما لم يُضمَّن يدوياً.
+Note: the cv2/rembg/PIL libraries are not fully auto-detected —
+hence the explicit hiddenimports and datas below.
+The rembg model (~44-176MB) is downloaded on first run unless bundled manually.
 """
 import sys
 from pathlib import Path
 
 block_cipher = None
-ROOT = Path(SPECPATH)  # noqa: F821
+ROOT = Path(SPECPATH)  # noqa: F821 — SPECPATH = the spec file's directory (backend/)
 
 a = Analysis(  # noqa: F821
     ["run.py"] if (ROOT / "run.py").exists() else ["app/main.py"],
@@ -37,7 +37,7 @@ a = Analysis(  # noqa: F821
         "sqlalchemy",
         "alembic",
         "pydantic_settings",
-        # optional AI — تُحزم فقط إن كانت مثبتة وقت البناء
+        # optional AI — bundled only if installed at build time
         "rembg",
         "onnxruntime",
     ],

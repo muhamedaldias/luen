@@ -63,7 +63,7 @@ def _split_alpha(img: Image.Image):
 
 
 def brightness_contrast(image_id: str, user_id: str, params: dict) -> str:
-    """سطوع/تباين دقيق عبر convertScaleAbs: alpha=1+c/100, beta=b."""
+    """Precise brightness/contrast via convertScaleAbs: alpha=1+c/100, beta=b."""
     img = _load(image_id, user_id)
     alpha = _split_alpha(img)
     b = max(-100.0, min(100.0, _float_params(params, "brightness", 0)))
@@ -74,7 +74,7 @@ def brightness_contrast(image_id: str, user_id: str, params: dict) -> str:
 
 
 def hue_saturation(image_id: str, user_id: str, params: dict) -> str:
-    """إزاحة Hue (-180..180) مع التفاف + تحجيم Saturation بالنسبة."""
+    """Hue shift (-180..180) with wraparound + proportional saturation scaling."""
     img = _load(image_id, user_id)
     alpha = _split_alpha(img)
     hue = max(-180.0, min(180.0, _float_params(params, "hue", 0)))
@@ -108,7 +108,7 @@ def sepia(image_id: str, user_id: str, params: dict) -> str:
 
 
 def vignette(image_id: str, user_id: str, params: dict) -> str:
-    """تظليل حواف بقناع Gaussian حقيقي (0..100)."""
+    """Edge shading with a true Gaussian mask (0..100)."""
     img = _load(image_id, user_id)
     alpha = _split_alpha(img)
     strength = max(0.0, min(100.0, _float_params(params, "strength", 45)))
@@ -129,7 +129,7 @@ def vignette(image_id: str, user_id: str, params: dict) -> str:
 
 
 def upscale(image_id: str, user_id: str, params: dict) -> str:
-    """تكبير عالي الجودة Lanczos4 بمقياس 2x/4x مع سقف حد البكسلات."""
+    """High-quality Lanczos4 upscale at 2x/4x with a pixel-limit ceiling."""
     from ..config import get_settings
 
     img = _load(image_id, user_id)
@@ -158,12 +158,12 @@ def upscale(image_id: str, user_id: str, params: dict) -> str:
 
 
 def inpaint(image_id: str, user_id: str, params: dict) -> str:
-    """إزالة كائن عالية الدقة: توسيع القناع + NS/TELEA + دمج حواف مضاد للتشوه.
+    """High-fidelity object removal: mask dilation + NS/TELEA + artifact-resistant edge blending.
 
-    params: mask (base64 إجباري), method: ns|telea|auto (الافتراضي ns — أدق للأنسجة),
-            dilate: توسيع البكسلات (0..15, افتراضي 5 — يزيل هالة الحواف),
-            radius: نصف قطر Inpaint (1..15, افتراضي 7),
-            feather: تنعيم حد الدمج (0..10, افتراضي 2).
+    params: mask (required base64), method: ns|telea|auto (default ns — best for texture),
+            dilate: pixel dilation (0..15, default 5 — removes the edge halo),
+            radius: inpaint radius (1..15, default 7),
+            feather: blend-boundary softening (0..10, default 2).
     """
     img = _load(image_id, user_id)
     mask = _decode_mask(params.get("mask"))
@@ -181,7 +181,7 @@ def inpaint(image_id: str, user_id: str, params: dict) -> str:
     feather = max(0, min(10, _int_param(params, "feather", 2)))
     method = str(params.get("method", "ns")).lower()
 
-    # توسيع القناع لابتلاع هالة حواف الكائن + إغلاق الثقوب الصغيرة
+    # Dilate the mask to swallow the object's edge halo + close small holes
     if dilate > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilate * 2 + 1, dilate * 2 + 1))
         mask_bin = cv2.dilate(mask_bin, k, iterations=1)
@@ -193,7 +193,7 @@ def inpaint(image_id: str, user_id: str, params: dict) -> str:
     if method == "telea":
         result = run(mask_bin, cv2.INPAINT_TELEA)
     elif method == "auto":
-        # الأفضل تلقائياً: NS للأنسجة + TELEA للمناطق الملساء — ندمجهما بقناع تفاصيل
+        # Automatic best-of-both: NS for texture + TELEA for smooth regions — blended by a detail mask
         r_ns = run(mask_bin, cv2.INPAINT_NS)
         r_te = run(mask_bin, cv2.INPAINT_TELEA)
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
@@ -201,19 +201,19 @@ def inpaint(image_id: str, user_id: str, params: dict) -> str:
         detail = cv2.GaussianBlur(np.abs(detail), (0, 0), 3)
         w = np.clip(detail / (detail.mean() + 12.0), 0, 1).astype(np.float32)[:, :, None]
         result = (r_ns.astype(np.float32) * w + r_te.astype(np.float32) * (1 - w)).astype(np.uint8)
-    else:  # ns — الافتراضي: يحافظ على النسيج أدق من TELEA ويشوّه أقل
+    else:  # ns — default: preserves texture better than TELEA and distorts less
         result = run(mask_bin, cv2.INPAINT_NS)
 
-    # دمج حواف ناعم: يمنع حلقة الضباب حول المنطقة المعالجة (سبب التشوه المرئي)
+    # Soft edge blend: prevents the fog ring around the processed region (the visible artifact)
     if feather > 0:
         ksize = max(3, (feather * 2 + 1) | 1)
         soft = cv2.GaussianBlur((mask_bin > 0).astype(np.float32), (ksize, ksize), 0)[:, :, None]
-        # تآكل طفيف للقناع الناعم حتى لا يتسرب الأصل فوق الحواف
+        # Slight erosion of the soft mask so the original does not bleed over the edges
         inner = cv2.erode((mask_bin > 0).astype(np.uint8) * 255, np.ones((3, 3), np.uint8))
         inner = cv2.GaussianBlur(inner.astype(np.float32) / 255.0, (ksize, ksize), 0)[:, :, None]
         w = np.clip(soft, 0, 1) * 0.5 + np.clip(inner, 0, 1) * 0.5
         result = (result.astype(np.float32) * w + bgr.astype(np.float32) * (1 - w)).astype(np.uint8)
-        # إعادة المنطقة الداخلية الصرفة من نتيجة الـinpaint (دون مزج)
+        # Restore the pure interior region from the inpaint result (without blending)
         core = cv2.erode((mask_bin > 0).astype(np.uint8), np.ones((3, 3), np.uint8), iterations=max(1, feather)) > 0
         result[core] = cv2.inpaint(bgr, mask_bin, radius, cv2.INPAINT_NS if method != "telea" else cv2.INPAINT_TELEA)[core]
 

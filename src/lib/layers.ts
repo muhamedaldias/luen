@@ -1,5 +1,5 @@
-/* طبقات عامة: صورة / شكل / تعبئة لونية — بجانب طبقات النص الموجودة.
-   كل طبقة نسبية (0..1) لدقة مستقلة عن الأبعاد + visible/locked/opacity. */
+/* Generic layers: image / shape / color fill — alongside the existing text layers.
+   Every layer is relative (0..1) for resolution independence, plus visible/locked/opacity. */
 
 export type LayerBlendMode =
   | "source-over"
@@ -76,7 +76,7 @@ export interface SolidLayer {
   mask?: LayerMask;
 }
 
-/** ضربة فرشاة حيّة — تُرسم ككائن Path قابل للتحديد والتعديل قبل دمجها في الصورة. */
+/** Live brush stroke — drawn as a Path object that can be selected and adjusted before it is committed to the image. */
 export interface StrokeLayer {
   id: string;
   name: string;

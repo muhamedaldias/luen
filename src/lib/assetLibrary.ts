@@ -1,5 +1,5 @@
-// مكتبة الأصول المدمجة: خلفيات منتجات وصور منتجات بخلفية شفافة — كلها
-// مرسومة برمجياً كـ SVG (بلا ملفات خارجية، ترخيص حر، جودة عند أي تكبير).
+// Bundled asset library: product backdrops and cut-out product images — all
+// generated procedurally as SVG (no external files, permissive licensing, crisp at any zoom).
 
 export type AssetKind = "background" | "product";
 
@@ -13,7 +13,7 @@ export interface AssetDef {
   svg: string;
 }
 
-/** مولد أرقام شبه عشوائي مثبّت البذرة — يضمن ثبات الأنماط بين الجلسات. */
+/** Seed-stable pseudo-random generator — keeps the generated patterns identical across sessions. */
 function rng(seed: number) {
   let s = seed % 2147483647;
   if (s <= 0) s += 2147483646;
@@ -28,7 +28,7 @@ export function assetDataUrl(asset: AssetDef): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(asset.svg)}`;
 }
 
-/* ── الخلفيات (800×600) ─────────────────────────────────────────── */
+/* ── Backdrops (800×600) ─────────────────────────────────────────── */
 
 function studioBg(id: string, name: string, c1: string, c2: string, c3: string): AssetDef {
   const svg = wrap(800, 600,
@@ -180,7 +180,7 @@ function seasonalBg(id: string, name: string, kind: "festive" | "spring" | "autu
   return { id, name, category: "Seasonal", kind: "background", w: 800, h: 600, svg: wrap(800, 600, body) };
 }
 
-/* ── المنتجات (360×360 بخلفية شفافة) ────────────────────────────── */
+/* ── Products (360×360, transparent background) ────────────────────────────── */
 
 const P_SHADOW = `<ellipse cx="180" cy="318" rx="108" ry="18" fill="#000" opacity="0.13"/>`;
 
@@ -277,7 +277,7 @@ const ASSET_PRODUCTS: AssetDef[] = [
     `<rect x="120" y="216" width="120" height="12" rx="5" fill="#3A3A3A"/>`),
 ];
 
-/* ── التجميع ────────────────────────────────────────────────────── */
+/* ── Assembly ────────────────────────────────────────────────────── */
 
 const ASSET_BACKGROUNDS: AssetDef[] = [
   studioBg("studio-sand", "Sand studio", "#F5E7D3", "#E7CFAF", "#D9BC96"),

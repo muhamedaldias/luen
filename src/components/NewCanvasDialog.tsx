@@ -62,7 +62,7 @@ export default function NewCanvasDialog({ onClose, onConfirm }: Props) {
       >
         <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>New canvas</h3>
         <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.6 }}>
-          ابدأ تصميمًا من الصفر: اختر المقاس ولون الخلفية — ثم أضف نصوصًا وأشكالًا وصورًا وصّدر بأي مقاس.
+          Start a design from scratch: pick the size and background color, then add text, shapes, and images, and export at any size.
         </p>
         <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)" }}>Size preset</p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>

@@ -1,4 +1,4 @@
-// حوار التصدير: اختيار الصيغة (PNG/JPG/WEBP) + الجودة + لون تسطيح الخلفية لـ JPG.
+// Export dialog: format choice (PNG/JPG/WEBP), quality, and background flatten color for JPG.
 import { useState } from "react";
 
 export interface ExportOptions {

@@ -7,8 +7,8 @@ from ..config import get_settings
 
 IMAGE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
-# تفعيل حد البكسلات عالمياً (حماية Decompression Bomb).
-# يجب أن يُضبط قبل أي Image.open — بما فيها عمّال ProcessPool (يستوردون هذه الوحدة).
+# Enable the pixel limit globally (decompression-bomb protection).
+# Must be set before any Image.open — including ProcessPool workers (they import this module).
 try:
     Image.MAX_IMAGE_PIXELS = int(get_settings().max_image_pixels)
 except Exception:

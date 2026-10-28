@@ -1,0 +1,5 @@
+# Neural background-removal dependencies (optional and heavy) — install only when needed.
+# Without them the backend runs fully via OpenCV GrabCut (see app/operations/background.py).
+-r requirements.txt
+rembg>=2.0.60,<3.0.0
+onnxruntime>=1.19.0

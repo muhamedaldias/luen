@@ -76,10 +76,10 @@ export const FONT_OPTIONS: { value: string; label: string }[] = [
   { value: "Impact, Haettenschweiler, sans-serif", label: "Impact" },
 ];
 
-/** مكتبة الخطوط المضمنة (Google Fonts) مقسمة حسب الفئة — تُحمّل دفعة واحدة في index.css. */
+/** Bundled font library (Google Fonts) grouped by category — loaded in a single batch from index.css. */
 export const FONT_LIBRARY: { category: string; fonts: { value: string; label: string }[] }[] = [
   {
-    category: "Arabic · عربي",
+    category: "Arabic",
     fonts: [
       { value: "'Cairo', sans-serif", label: "Cairo" },
       { value: "'Tajawal', sans-serif", label: "Tajawal" },
@@ -152,7 +152,7 @@ export const FONT_LIBRARY: { category: string; fonts: { value: string; label: st
   },
 ];
 
-/** كل عائلات الخطوط المضمنة (للتحميل المسبق عبر document.fonts.load). */
+/** Every bundled font family (for preloading through document.fonts.load). */
 export const FONT_FAMILY_NAMES: string[] = [
   "Cairo", "Tajawal", "Almarai", "IBM Plex Sans Arabic", "Reem Kufi", "Amiri", "Noto Kufi Arabic",
   "Inter", "Poppins", "Montserrat", "Nunito Sans", "Work Sans", "Manrope", "DM Sans", "Roboto",

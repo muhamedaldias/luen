@@ -3,14 +3,14 @@ import { Undo2, Redo2, Save, Download, ChevronDown, Settings, PanelRightClose, P
 import { FilterInfoCard } from "./FilterInfoCard";
 import { FILTER_INFO, prewarmFilterPreviews } from "../lib/filterPreviews";
 
-/** دليل الاستخدام العربي (PDF) — يُخدم من public/ فيُنسخ إلى dist تلقائياً عند البناء. */
+/** Arabic user guide (PDF) — served from public/ and copied into dist automatically at build time. */
 const GUIDE_URL = `${import.meta.env.BASE_URL}Lumen-User-Guide-AR.pdf`;
 const GUIDE_FILENAME = "Lumen-User-Guide-AR.pdf";
 
 /**
- * تحميل الدليل كـ blob لإجبار التنزيل بدل معاينة المتصفح المدمجة للـ PDF،
- * مع fallback لفتح الدليل في تبويب جديد (مفيد في WebView سطح المكتب حيث
- * قد يُتجاهل download attribute).
+ * Fetch the guide as a blob to force a download instead of the browser's built-in PDF preview,
+ * with a fallback that opens the guide in a new tab (useful in desktop WebViews, which
+ * may ignore the download attribute).
  */
 async function downloadUserGuide(): Promise<void> {
   try {
@@ -42,7 +42,7 @@ const menus: { key: MenuKey; label: string; items?: string[]; sections?: MenuSec
   {
     key: "file",
     label: "File",
-    items: ["New…", "Open…", "Open Project…", "Open Recent", "—", "Save", "Save As…", "Export As…", "Save Project…", "—", "Close"],
+    items: ["New…", "Open…", "Open Project…", "Open Recent", "—", "Save", "Save As…", "Export As…", "Save Project…"],
   },
   {
     key: "edit",
@@ -248,7 +248,6 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
   }
 
   function handleMenuAction(item: string) {
-    console.log(`[topbar] action ${item}`);
     switch (item) {
       case "New…":
         onNew?.();
@@ -269,9 +268,6 @@ export default function TopBar({ canUndo = false, canRedo = false, onUndo, onRed
         break;
       case "Export As…":
         onExport?.();
-        break;
-      case "Close":
-        onNew?.();
         break;
       case "Undo":
         onUndo?.();
@@ -343,7 +339,6 @@ return (
                 }
               }}
               onClick={() => {
-                console.log(`[topbar] menu ${m.key}`);
                 setOpenMenu(openMenu === m.key ? null : m.key);
               }}
               onMouseEnter={() => openMenu && openMenu !== m.key && setOpenMenu(m.key)}
@@ -457,7 +452,7 @@ return (
 
         <div className="w-px h-5 mx-1" style={{ background: "var(--border)" }} />
 
-        <div data-testid="help-guide-btn" title="تحميل دليل الاستخدام (PDF) — Download user guide">
+        <div data-testid="help-guide-btn" title="Download user guide (PDF)">
           <ActionBtn
             icon={<CircleQuestionMark size={15} />}
             label="Help"

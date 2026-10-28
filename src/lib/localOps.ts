@@ -1,6 +1,6 @@
-/* معالجة صور محلية (Offline) داخل المتصفح عبر Canvas 2D.
-   تُستخدم تلقائياً عندما لا يوجد imageId (الباكند غير متصل) —
-   كل فلاتر القائمة العلوية تعمل دائماً، والباكند يُستخدم عند توفره لجودة أعلى. */
+/* Local image processing (offline) inside the browser through Canvas 2D.
+   Used automatically when there is no imageId (the backend is offline) —
+   every filter in the top menu always works, and the backend is used when available for higher quality. */
 
 import {
   keepMajorMaskComponents,
@@ -11,6 +11,7 @@ import {
   maskSoftnessRatio,
   refineRadii,
 } from "./maskRefine";
+import { blendPlan } from "./blendModes";
 
 function loadImg(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -157,7 +158,7 @@ function resizeCanvas(src: HTMLCanvasElement, w: number, h: number, anchor: stri
   return c;
 }
 
-/** Auto Enhance حقيقي: تمديد تباين per-channel عند 1%/99% percentiles. */
+/** Real auto enhance: per-channel contrast stretch at the 1%/99% percentiles. */
 function autoEnhance(src: HTMLCanvasElement): HTMLCanvasElement {
   const [c, ctx] = canvasOf(src.width, src.height);
   ctx.drawImage(src, 0, 0);
@@ -195,17 +196,18 @@ function autoEnhance(src: HTMLCanvasElement): HTMLCanvasElement {
   return c;
 }
 
-/* ── إزالة الخلفية العصبية (u2netp + onnxruntime-web) ──
- * U²-Netp (~4.5MB، Apache-2.0) مستضاف محلياً في public/models — كشف كائنات
- * بارزة يناسب صور المنتجات، يعمل أوفلاين بالكامل عبر WASM.
- * المعالجة المسبقة/اللاحقة مطابقة لمرجع rembg: 320×320 وتطبيع ImageNet. */
+/* ── Neural background removal (u2netp + onnxruntime-web) ──
+ * U2-Netp (~4.5MB, Apache-2.0) is hosted locally in public/models — salient object
+ * detection suited to product photos; it runs fully offline through WASM.
+ * Pre/post-processing matches the rembg reference: 320×320 and ImageNet normalization. */
 const U2NET_MODEL = "/models/u2netp.onnx";
 const U2NET_SIZE = 320;
 const U2NET_MEAN = [0.485, 0.456, 0.406];
 const U2NET_STD = [0.229, 0.224, 0.225];
-// ملفات تشغيل ORT من CDN — الروابط الخارجية لا يلمسها Vite (مسار /public/?import يرجع index.html).
-// النموذج نفسه (u2netp.onnx) مستضاف محلياً — بلا اعتماد على huggingface.
-const ORT_WASM_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/";
+// The ORT runtime files (mjs + wasm) resolve locally through Vite: the library uses
+// `new URL('./ort-wasm-simd-threaded.wasm', import.meta.url)`, so the build emits them
+// as a locally fingerprinted asset. That is why we never point wasmPaths at a CDN — the app runs
+// fully offline. (Pointing it at jsdelivr earlier broke the promise of working without internet.)
 type OrtValue = { data: Float32Array; dims: number[] };
 type OrtSession = {
   run: (feeds: Record<string, unknown>) => Promise<Record<string, OrtValue>>;
@@ -224,10 +226,9 @@ async function loadNeuralSession(): Promise<{ session: OrtSession; ort: OrtModul
   if (!ortSessionPromise) {
     ortSessionPromise = (async () => {
       const ort = (await import("onnxruntime-web")) as unknown as OrtModule;
-      ort.env.wasm.wasmPaths = ORT_WASM_CDN;
       return await ort.InferenceSession.create(U2NET_MODEL, { executionProviders: ["wasm"] });
     })();
-    // فشل التحميل لا يُقفل المسار العصبي — تُعاد المحاولة في النداء التالي.
+    // A load failure does not lock the neural path — the next call retries.
     ortSessionPromise.catch(() => {
       ortSessionPromise = null;
     });
@@ -236,16 +237,16 @@ async function loadNeuralSession(): Promise<{ session: OrtSession; ort: OrtModul
   return { session: await ortSessionPromise, ort };
 }
 
-/** إزالة خلفية عصبية: u2netp يقنّع الكائن البارز، والقناع يُطبَّق على ألفا الصورة.
- * anchor: نسبة نقرة المستخدم (0..1) — إن وُجدت يُبقى مكوّنها حصرًا مع المكوّنات
- * الموثوقة، فلا تنجو بقايا الانعكاسات الكبيرة مهما بلغ حجمها. */
+/** Neural background removal: u2netp masks the salient object, and the mask is applied to the image alpha.
+ * anchor: the user's click position (0..1) — when present, its component is kept exclusively along with the
+ * trustworthy components, so large reflection remnants never survive no matter how big they are. */
 async function removeBackgroundNeural(
   src: HTMLCanvasElement,
   anchor?: { ax: number; ay: number },
 ): Promise<HTMLCanvasElement> {
   const { session, ort } = await loadNeuralSession();
 
-  // معالجة مسبقة: 320×320، CHW، تطبيع ImageNet
+  // Preprocessing: 320×320, CHW, ImageNet normalization
   const [small, sctx] = canvasOf(U2NET_SIZE, U2NET_SIZE);
   sctx.imageSmoothingEnabled = true;
   sctx.imageSmoothingQuality = "high";
@@ -274,7 +275,7 @@ async function removeBackgroundNeural(
   const oh = out.dims[out.dims.length - 2];
   const n = ow * oh;
 
-  // مخرج d0 بعد السيجمويد: تطبيع min-max إلى 0..255 (عرف rembg)
+  // The d0 output after the sigmoid: min-max normalization to 0..255 (the rembg convention)
   let mn = 1;
   let mx = 0;
   for (let p = 0; p < n; p++) {
@@ -283,7 +284,7 @@ async function removeBackgroundNeural(
     if (v > mx) mx = v;
   }
   const range = Math.max(1e-6, mx - mn);
-  // فلتر ثقة: قناع موضوع حقيقي تباينه واسع؛ هلوسة التدرجات مداها ضيق — نرفضها.
+  // Confidence filter: a real subject mask has wide contrast; gradient hallucination has a narrow range — reject it.
   if (mx - mn < 0.35) {
     throw new Error("No clear subject found — nothing to remove");
   }
@@ -295,13 +296,13 @@ async function removeBackgroundNeural(
     if (v > 127) keep++;
   }
   const keepRatio = keep / n;
-  // خلفية مجردة بلا موضوع واضح: نرفض بدل إنتاج نتيجة مضلِّلة.
+  // A bare backdrop with no clear subject: reject rather than produce a misleading result.
   if (keepRatio < 0.02 || keepRatio > 0.98) {
     throw new Error("No clear subject found — nothing to remove");
   }
 
-  // تنقية 1: حذف البقع الشاردة والانعكاسات (دقة القناع 320 تُنتجها كثيرًا).
-  // مع نقرة المستخدم: المكوّن المُنقر هو الموضوع — يُبقى هو وموثوقاته فقط.
+  // Refinement 1: drop stray specks and reflections (a 320px mask produces plenty of them).
+  // With a user click: the clicked component is the subject — keep it and its trustworthy neighbors only.
   if (anchor) {
     keepAnchorMaskComponents(vals, ow, oh, anchor.ax * ow, anchor.ay * oh);
   } else {
@@ -319,7 +320,7 @@ async function removeBackgroundNeural(
   }
   mctx.putImageData(mimg, 0, 0);
 
-  // تكبير القناع بحواف ناعمة ثم ضربه في قناة الألفا
+  // Upscale the mask with soft edges, then multiply it into the alpha channel
   const W = src.width;
   const H = src.height;
   const [big, bctx] = canvasOf(W, H);
@@ -328,8 +329,8 @@ async function removeBackgroundNeural(
   bctx.drawImage(mc, 0, 0, W, H);
   const maskAlpha = bctx.getImageData(0, 0, W, H).data;
 
-  // تنقية 2: منحنى الثقة + تآكل تكيفي + ريشة — التآكل يُلغى تلقائيًا للموضوعات
-  // الناعمة (زجاج/شفاف) حيث نسبة البكسلات الوسطية عالية، كي لا تُؤكل الحواف الرقيقة.
+  // Refinement 2: confidence curve + adaptive erosion + feather — erosion is disabled automatically for
+  // soft subjects (glass/translucent) where the midtone pixel ratio is high, so thin edges are not eaten away.
   const softness = maskSoftnessRatio(vals, n);
   const radii = refineRadii(Math.min(W, H));
   const erode = softness > 0.25 ? 0 : radii.erode;
@@ -355,19 +356,20 @@ async function removeBackgroundNeural(
   return outC;
 }
 
-/** إزالة الخلفية الذكية: العصبية أولاً، والكلاسيكية احتياط. */
+/** Smart background removal: neural first, classical as a fallback. */
 async function removeBackgroundSmart(
   src: HTMLCanvasElement,
   anchor?: { ax: number; ay: number },
 ): Promise<HTMLCanvasElement> {
   try {
     return await removeBackgroundNeural(src, anchor);
-  } catch {
+  } catch (err) {
+    console.warn("[localOps] neural background removal failed — using classic fallback:", err);
     return removeBackgroundClassic(src);
   }
 }
 
-/** إزالة خلفية كلاسيكية (احتياطية): region-growing من الحواف + تنعيم. تعمل بلا سيرفر. */
+/** Classical (fallback) background removal: region growing from the edges + smoothing. Works without a server. */
 function removeBackgroundClassic(src: HTMLCanvasElement): HTMLCanvasElement {
   const W = src.width;
   const H = src.height;
@@ -381,7 +383,7 @@ function removeBackgroundClassic(src: HTMLCanvasElement): HTMLCanvasElement {
   sctx.drawImage(src, 0, 0, sw, sh);
   const sd = sctx.getImageData(0, 0, sw, sh).data;
 
-  // متوسط لون الحواف كمرجع للخلفية
+  // Average edge color as the background reference
   let br = 0;
   let bg = 0;
   let bb = 0;
@@ -402,7 +404,7 @@ function removeBackgroundClassic(src: HTMLCanvasElement): HTMLCanvasElement {
     return dr * dr + dg * dg + db * db < TOL * TOL;
   };
 
-  // BFS من الحواف عبر البكسلات المرشحة فقط
+  // BFS from the edges across candidate pixels only
   const seen = new Uint8Array(sw * sh);
   const queue: number[] = [];
   for (let x = 0; x < sw; x++) {
@@ -440,13 +442,13 @@ function removeBackgroundClassic(src: HTMLCanvasElement): HTMLCanvasElement {
 
   const [maskC, mctx] = canvasOf(sw, sh);
   if (ratio < 0.02 || ratio > 0.98) {
-    // لا موضوع واضح: خطأ صريح بدل قناع دائري مضلِّل.
+    // No clear subject: raise an explicit error instead of a misleading circular mask.
     throw new Error("No clear subject found — background removal needs a distinct subject");
   }
   const mimg = mctx.createImageData(sw, sh);
   {
     const md = mimg.data;
-    // تنقية: حذف جزر المقدمة الشاردة قبل التكبير (رخيصة التكلفة بدقة العمل المصغّرة)
+    // Refinement: drop stray foreground islands before upscaling (cheap at the working resolution)
     const packed = new Uint8ClampedArray(sw * sh);
     for (let p = 0; p < sw * sh; p++) packed[p] = seen[p] ? 0 : 255;
     keepMajorMaskComponents(packed, sw, sh);
@@ -457,7 +459,7 @@ function removeBackgroundClassic(src: HTMLCanvasElement): HTMLCanvasElement {
     mctx.putImageData(mimg, 0, 0);
   }
 
-  // تكبير ناعم للقناع ثم تنقية الحواف (تآكل يزيل الهالة + ريشة) قبل تطبيق الألفا
+  // Smooth upscale of the mask, then edge refinement (erosion removes the halo + feather) before applying alpha
   const [big, bctx] = canvasOf(W, H);
   bctx.imageSmoothingEnabled = true;
   bctx.imageSmoothingQuality = "high";
@@ -488,8 +490,8 @@ function removeBackgroundClassic(src: HTMLCanvasElement): HTMLCanvasElement {
   return c;
 }
 
-/** Inpaint محلي محسّن: توسيع قناع + ملء بالوسيط من 8 جيران + مزج حواف.
- *  يقلل التشوه والضبابية مقارنة بالمتوسط البسيط من 4 جيران. */
+/** Improved local inpaint: mask dilation + median fill from 8 neighbors + edge blending.
+ *  Reduces smearing and blur compared with a plain 4-neighbor average. */
 async function removeObject(src: HTMLCanvasElement, maskUrl: string): Promise<HTMLCanvasElement> {
   const maskImg = await loadImg(maskUrl);
   const [mc, mctx] = canvasOf(src.width, src.height);
@@ -523,7 +525,7 @@ async function removeObject(src: HTMLCanvasElement, maskUrl: string): Promise<HT
     }
   }
   if (maxX < 0) return c;
-  // توسيع القناع 3px لابتلاع هالة الحواف (سبب التشوه الأشهر)
+  // Dilate the mask by 3px to swallow the edge halo (the most common cause of smearing)
   {
     const copy = unknown.slice();
     const R = 3;
@@ -552,9 +554,9 @@ async function removeObject(src: HTMLCanvasElement, maskUrl: string): Promise<HT
   maxX = Math.min(W - 1, maxX + M);
   maxY = Math.min(H - 1, maxY + M);
 
-  // نسخة أصلية للدمج النهائي للحواف
+  // Original copy for the final edge blend
   const orig = new Uint8ClampedArray(d);
-  const filledMask = new Uint8Array(W * H); // 1 = عولج بـinpaint
+  const filledMask = new Uint8Array(W * H); // 1 = handled by inpaint
 
   let remaining = 0;
   for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) if (unknown[y * W + x]) remaining++;
@@ -620,7 +622,7 @@ async function removeObject(src: HTMLCanvasElement, maskUrl: string): Promise<HT
       if (unknown[p]) { d[p * 4] = r; d[p * 4 + 1] = g; d[p * 4 + 2] = b; filledMask[p] = 1; }
     }
   }
-  // مزج حواف 2px مع الأصل لإخفاء حلقة الدمج (يُبقي الداخل صرفاً من Inpaint)
+  // Blend a 2px edge with the original to hide the seam ring (keeps the interior purely inpainted)
   for (let y = Math.max(1, minY); y <= Math.min(H - 2, maxY); y++) {
     for (let x = Math.max(1, minX); x <= Math.min(W - 2, maxX); x++) {
       const p = y * W + x;
@@ -644,11 +646,11 @@ async function removeObject(src: HTMLCanvasElement, maskUrl: string): Promise<HT
   return c;
 }
 
-/** تحسين احترافي محلي: توازن أبيض + تمديد تباين + حيوية + حدة — نسخة خفيفة من pro_enhance. */
+/** Local pro enhance: white balance + contrast stretch + vibrance + sharpness — a light version of pro_enhance. */
 function proEnhance(src: HTMLCanvasElement, strengthPct: number): HTMLCanvasElement {
   const k = Math.max(0, Math.min(100, strengthPct)) / 100;
   if (k <= 0) return src;
-  // 1) توازن أبيض Gray-World جزئي
+  // 1) Partial Gray-World white balance
   let cur = src;
   {
     const [c, ctx] = canvasOf(src.width, src.height);
@@ -673,9 +675,9 @@ function proEnhance(src: HTMLCanvasElement, strengthPct: number): HTMLCanvasElem
     ctx.putImageData(img, 0, 0);
     cur = c;
   }
-  // 2) تمديد تباين (نفس autoEnhance)
+  // 2) Contrast stretch (same as autoEnhance)
   cur = autoEnhance(cur);
-  // 3) تشبع حيوي عبر CSS filter (للألوان الباهتة تأثير أكبر بصرياً)
+  // 3) Vibrance through a CSS filter (visually stronger on faded colors)
   {
     const tmp = document.createElement("canvas");
     tmp.width = cur.width;
@@ -688,12 +690,134 @@ function proEnhance(src: HTMLCanvasElement, strengthPct: number): HTMLCanvasElem
       cur = tmp;
     }
   }
-  // 4) حدة تكيفية خفيفة
+  // 4) Light adaptive sharpening
   if (k > 0.1) cur = sharpen(cur, 0.35 + 0.9 * k);
   return cur;
 }
 
-/** دمج محلي: مزج ألفا ناعم مع مطابقة سطوع بسيطة — يعمل بلا سيرفر. */
+/** Average color of a region from a context canvas (for lighting/color matching in the blend modes). */
+function blendRegionMean(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): [number, number, number] {
+  const sw = Math.max(1, Math.min(w, ctx.canvas.width - x));
+  const sh = Math.max(1, Math.min(h, ctx.canvas.height - y));
+  let d: Uint8ClampedArray;
+  try {
+    d = ctx.getImageData(x, y, sw, sh).data;
+  } catch {
+    return [128, 128, 128];
+  }
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 16) {
+    r += d[i];
+    g += d[i + 1];
+    b += d[i + 2];
+    n++;
+  }
+  n = Math.max(1, n);
+  return [r / n, g / n, b / n];
+}
+
+/** Per-channel color match between the foreground and the background region (a Poisson normal-cloning approximation). */
+function blendMatchChannels(fg: HTMLCanvasElement, bctx: CanvasRenderingContext2D, x0: number, y0: number, strength: number): void {
+  const ctx = fg.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return;
+  const [br, bg, bb] = blendRegionMean(bctx, x0, y0, fg.width, fg.height);
+  const [fr, fgm, fb] = blendRegionMean(ctx, 0, 0, fg.width, fg.height);
+  const dr = Math.max(-strength, Math.min(strength, br - fr));
+  const dg = Math.max(-strength, Math.min(strength, bg - fgm));
+  const db = Math.max(-strength, Math.min(strength, bb - fb));
+  if (Math.abs(dr) < 1 && Math.abs(dg) < 1 && Math.abs(db) < 1) return;
+  const img = ctx.getImageData(0, 0, fg.width, fg.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = clamp255(d[i] + dr);
+    d[i + 1] = clamp255(d[i + 1] + dg);
+    d[i + 2] = clamp255(d[i + 2] + db);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/** Luminance transfer (Mono): convert the foreground to pure luminance, then tint it with the background color. */
+function blendMonoTransfer(fg: HTMLCanvasElement, bctx: CanvasRenderingContext2D, x0: number, y0: number): void {
+  const ctx = fg.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return;
+  const [br, bgc, bb] = blendRegionMean(bctx, x0, y0, fg.width, fg.height);
+  const bl = Math.max(1, (br + bgc + bb) / 3);
+  const tr = br / bl;
+  const tg = bgc / bl;
+  const tb = bb / bl;
+  const img = ctx.getImageData(0, 0, fg.width, fg.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    d[i] = clamp255(lum * tr);
+    d[i + 1] = clamp255(lum * tg);
+    d[i + 2] = clamp255(lum * tb);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/** High-frequency detail reinjection (Mixed) to preserve the background texture. */
+function blendHighFrequency(fg: HTMLCanvasElement, amount: number): void {
+  const ctx = fg.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return;
+  const soft = blurCanvas(fg, Math.max(1, Math.min(6, Math.min(fg.width, fg.height) / 40)));
+  const sctx = soft.getContext("2d", { willReadFrequently: true });
+  if (!sctx) return;
+  const a = ctx.getImageData(0, 0, fg.width, fg.height);
+  const b = sctx.getImageData(0, 0, fg.width, fg.height);
+  const da = a.data;
+  const db = b.data;
+  for (let i = 0; i < da.length; i += 4) {
+    da[i] = clamp255(da[i] + (da[i] - db[i]) * amount);
+    da[i + 1] = clamp255(da[i + 1] + (da[i + 1] - db[i + 1]) * amount);
+    da[i + 2] = clamp255(da[i + 2] + (da[i + 2] - db[i + 2]) * amount);
+  }
+  ctx.putImageData(a, 0, 0);
+}
+
+/** Soft edge mask, plus a multi-scale version for pyramid mode (Pyramid). */
+function blendBuildMask(fw: number, fh: number, feather: number, multiScale: boolean): HTMLCanvasElement {
+  const [m, mctx] = canvasOf(fw, fh);
+  mctx.fillStyle = "#fff";
+  mctx.fillRect(0, 0, fw, fh);
+  if (feather <= 0) return m;
+  mctx.strokeStyle = "#000";
+  mctx.lineWidth = Math.max(1, Math.min(feather * 2, Math.min(fw, fh) - 2));
+  mctx.strokeRect(0, 0, fw, fh);
+  const base = Math.max(1, Math.min(24, feather));
+  const [b1, c1] = canvasOf(fw, fh);
+  c1.filter = `blur(${base.toFixed(2)}px)`;
+  c1.drawImage(m, 0, 0);
+  c1.filter = "none";
+  if (!multiScale) return b1;
+  // Multi-scale pyramid: a wider second level, then blend the two for a seamless falloff.
+  const [b2, c2] = canvasOf(fw, fh);
+  c2.filter = `blur(${(base * 2).toFixed(2)}px)`;
+  c2.drawImage(b1, 0, 0);
+  c2.filter = "none";
+  const [out, octx] = canvasOf(fw, fh);
+  octx.globalAlpha = 0.5;
+  octx.drawImage(b1, 0, 0);
+  octx.drawImage(b2, 0, 0);
+  octx.globalAlpha = 1;
+  return out;
+}
+
+/** Composite the masked foreground over the background (prevents edge bleed). */
+function blendComposite(base: HTMLCanvasElement, fg: HTMLCanvasElement, mask: HTMLCanvasElement, x0: number, y0: number): void {
+  const [tmp, tctx] = canvasOf(fg.width, fg.height);
+  tctx.drawImage(fg, 0, 0);
+  tctx.globalCompositeOperation = "destination-in";
+  tctx.drawImage(mask, 0, 0);
+  const octx = base.getContext("2d", { willReadFrequently: true });
+  if (!octx) return;
+  octx.drawImage(tmp, x0, y0);
+}
+
+/** Local blending with five modes matching the backend modes — works without a server. */
 async function blendLocal(src: HTMLCanvasElement, params: Record<string, number | string>): Promise<HTMLCanvasElement> {
   const fgParam = params.foreground;
   if (typeof fgParam !== "string" || !fgParam) throw new Error("foreground is required");
@@ -704,77 +828,34 @@ async function blendLocal(src: HTMLCanvasElement, params: Record<string, number 
   const cxPct = Math.max(0, Math.min(100, num(params.x, 50)));
   const cyPct = Math.max(0, Math.min(100, num(params.y, 50)));
   const feather = Math.max(0, Math.min(80, Math.round(num(params.feather, 12))));
+  const mode = typeof params.mode === "string" && params.mode ? params.mode : "feather";
+  const plan = blendPlan(mode);
+  const cmRaw = params.colorMatch;
+  const colorMatch = cmRaw === undefined ? true : !(String(cmRaw) === "false" || String(cmRaw) === "0");
   const fw = Math.max(8, Math.round((W * scalePct) / 100));
   const fh = Math.max(8, Math.round((fgImg.naturalHeight / Math.max(1, fgImg.naturalWidth)) * fw));
   const cx = Math.round((W * cxPct) / 100);
   const cy = Math.round((H * cyPct) / 100);
   const x0 = Math.max(0, Math.min(W - fw, cx - (fw >> 1)));
   const y0 = Math.max(0, Math.min(H - fh, cy - (fh >> 1)));
-  // مطابقة سطوع بسيطة: فرق متوسط الإضاءة بين المنطقتين
+
   const [base, bctx] = canvasOf(W, H);
   bctx.drawImage(src, 0, 0);
   const [fgC, fctx] = canvasOf(fw, fh);
   fctx.imageSmoothingEnabled = true;
   fctx.imageSmoothingQuality = "high";
   fctx.drawImage(fgImg, 0, 0, fw, fh);
-  try {
-    const bgData = bctx.getImageData(x0, y0, Math.min(fw, W - x0), Math.min(fh, H - y0)).data;
-    const fgData = fctx.getImageData(0, 0, fw, fh).data;
-    let bL = 0;
-    let fL = 0;
-    let bn = 0;
-    let fn = 0;
-    for (let i = 0; i < bgData.length; i += 16) { bL += (bgData[i] + bgData[i + 1] + bgData[i + 2]) / 3; bn++; }
-    for (let i = 0; i < fgData.length; i += 16) { fL += (fgData[i] + fgData[i + 1] + fgData[i + 2]) / 3; fn++; }
-    bL /= Math.max(1, bn); fL /= Math.max(1, fn);
-    const diff = Math.max(-28, Math.min(28, (bL - fL) * 0.55));
-    if (Math.abs(diff) > 1.5) {
-      const img = fctx.getImageData(0, 0, fw, fh);
-      const dd = img.data;
-      for (let i = 0; i < dd.length; i += 4) {
-        dd[i] = Math.max(0, Math.min(255, dd[i] + diff));
-        dd[i + 1] = Math.max(0, Math.min(255, dd[i + 1] + diff));
-        dd[i + 2] = Math.max(0, Math.min(255, dd[i + 2] + diff));
-      }
-      fctx.putImageData(img, 0, 0);
-    }
-  } catch { /* تجاهل — الدمج يكمل */ }
-  // قناع ناعم للحواف
-  const [mC, mctx] = canvasOf(fw, fh);
-  mctx.fillStyle = "#fff";
-  mctx.fillRect(0, 0, fw, fh);
-  if (feather > 0) {
-    mctx.strokeStyle = "#000";
-    mctx.lineWidth = Math.min(feather * 2, Math.min(fw, fh) - 2);
-    mctx.strokeRect(0, 0, fw, fh);
-    try {
-      (mctx as CanvasRenderingContext2D).filter = `blur(${Math.min(24, feather)}px)`;
-      mctx.drawImage(mC, 0, 0);
-      (mctx as CanvasRenderingContext2D).filter = "none";
-    } catch { /* تجاهل */ }
+
+  if (plan.mono) {
+    blendMonoTransfer(fgC, bctx, x0, y0);
+  } else if (colorMatch && plan.matchStrength > 0) {
+    blendMatchChannels(fgC, bctx, x0, y0, plan.matchStrength);
   }
-  const out = base;
-  const octx = out.getContext("2d", { willReadFrequently: true });
-  if (!octx) return base;
-  octx.save();
-  octx.drawImage(fgC, x0, y0);
-  // تطبيق القناع الناعم عبر globalCompositeOperation على نسخة ثم دمج
-  try {
-    const tmp = document.createElement("canvas");
-    tmp.width = fw; tmp.height = fh;
-    const tctx = tmp.getContext("2d");
-    if (tctx) {
-      tctx.drawImage(fgC, 0, 0);
-      tctx.globalCompositeOperation = "destination-in";
-      tctx.drawImage(mC, 0, 0);
-      octx.clearRect(x0, y0, fw, fh);
-      // أعد رسم الخلفية الأصلية في المنطقة ثم الأمامية المقنعة
-      octx.drawImage(src, x0, y0, fw, fh, x0, y0, fw, fh);
-      octx.drawImage(tmp, x0, y0);
-    }
-  } catch { octx.drawImage(fgC, x0, y0); }
-  octx.restore();
-  return out;
+  if (plan.highFrequency > 0) blendHighFrequency(fgC, plan.highFrequency);
+
+  const mask = blendBuildMask(fw, fh, feather, plan.multiScale);
+  blendComposite(base, fgC, mask, x0, y0);
+  return base;
 }
 
 function num(v: unknown, def: number): number {
@@ -809,6 +890,15 @@ function blurCanvas(src: HTMLCanvasElement, px: number): HTMLCanvasElement {
   if (px <= 0) return src;
   const [c, ctx] = canvasOf(src.width, src.height);
   ctx.filter = `blur(${px.toFixed(2)}px)`;
+  ctx.drawImage(src, 0, 0);
+  ctx.filter = "none";
+  return c;
+}
+
+/** Applies a CSS filter to an existing canvas (the counterpart of drawFiltered, which works on <img>). */
+function drawFilteredCanvas(src: HTMLCanvasElement, filter: string): HTMLCanvasElement {
+  const [c, ctx] = canvasOf(src.width, src.height);
+  ctx.filter = filter;
   ctx.drawImage(src, 0, 0);
   ctx.filter = "none";
   return c;
@@ -1141,7 +1231,7 @@ function curvesLocal(src: HTMLCanvasElement, params: Record<string, number | str
   return pixelLoop(src, (r, g, b) => [useR ? lut[r] : r, useG ? lut[g] : g, useB ? lut[b] : b]);
 }
 
-/** تنفيذ عملية واحدة محلياً — يرمي Error عند الفشل. */
+/** Run a single operation locally — throws an Error on failure. */
 export async function applyLocalOp(
   imageUrl: string,
   op: string,
@@ -1193,6 +1283,23 @@ export async function applyLocalOp(
       const tp = Math.max(-100, Math.min(100, num(params.temperature, 0)));
       const hi = Math.max(-100, Math.min(100, num(params.highlights, 0)));
       const shd = Math.max(-100, Math.min(100, num(params.shadows, 0)));
+      const expo = Math.max(-100, Math.min(100, num(params.exposure, 0)));
+      const wt = Math.max(-100, Math.min(100, num(params.whites, 0)));
+      const blk = Math.max(-100, Math.min(100, num(params.blacks, 0)));
+      // Exposure: linear gain with EV semantics (-100 → 0.25× and +100 → 4×).
+      if (expo !== 0) tmp = drawFilteredCanvas(tmp, `brightness(${Math.pow(2, expo / 50).toFixed(4)})`);
+      // Whites/Blacks: a white/black point curve on the luminance level (LUT).
+      if (wt !== 0 || blk !== 0) {
+        const lut = new Uint8ClampedArray(256);
+        for (let v = 0; v < 256; v++) {
+          const t = v / 255;
+          let out2 = t;
+          if (blk !== 0) out2 += (blk / 100) * 0.35 * Math.pow(1 - t, 2.2);
+          if (wt !== 0) out2 += (wt / 100) * 0.35 * Math.pow(t, 2.2);
+          lut[v] = clamp255(out2 * 255);
+        }
+        tmp = pixelLoop(tmp, (r, g, b) => [lut[r], lut[g], lut[b]]);
+      }
       if (tp !== 0 || hi !== 0 || shd !== 0) {
         tmp = pixelLoop(tmp, (r, g, bl2) => {
           const lum = (r + g + bl2) / 3 / 255;

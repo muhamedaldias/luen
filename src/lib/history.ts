@@ -2,9 +2,9 @@ import { cloneEfficient, type LayerRef } from "./layerSystem";
 import type { TextLayer } from "./textLayers";
 import type { ImageLayer, ShapeLayer, SolidLayer, StrokeLayer } from "./layers";
 
-/* سجل التراجع (Undo/Redo) — مستخرج من App.tsx كخطوة عزل أولى:
- * كل لقطة (Memento) تحفظ الحالة الكاملة، بحد أقصى تكيّفي حسب حجم الصورة
- * لمنع انفجار الذاكرة (dataURL صورة 8000px × 25 لقطة = مئات MB). */
+/* Undo/Redo history — extracted from App.tsx as a first isolation step:
+ * every snapshot (Memento) holds the full state, with an adaptive cap based on image size
+ * to prevent memory blow-ups (an 8000px image dataURL × 25 snapshots = hundreds of MB). */
 
 export interface CanvasImage {
   url: string;
@@ -21,9 +21,9 @@ export interface HistoryEntry {
   shapeLayers: ShapeLayer[];
   solidLayers: SolidLayer[];
   strokeLayers?: StrokeLayer[];
-  /** الصورة الأساسية قبل أول خلفية من المكتبة — لاستبدال الخلفيات لاحقاً. */
+  /** The base image before the first library backdrop — so later backdrops can replace it. */
   baseBeforeBackdrop?: CanvasImage | null;
-  /** هل صورة اللقطة خلفية مجردة بلا صورة منتج ولا محتوى مستخدم مدمج؟ */
+  /** Is the snapshot image a bare backdrop with no product image and no committed user content? */
   pureBackdrop?: boolean;
   strokes: object[];
   order: LayerRef[];
@@ -33,7 +33,7 @@ export interface HistoryEntry {
   selectionInverted: boolean;
 }
 
-/** عمق السجل حسب حجم الصورة المقدّر. */
+/** History depth based on the estimated image size. */
 export const DEFAULT_MAX_HISTORY = 25;
 export const MEDIUM_IMAGE_MAX_HISTORY = 15;
 export const LARGE_IMAGE_MAX_HISTORY = 10;
@@ -61,7 +61,7 @@ export function emptyEntry(label: string): HistoryEntry {
   };
 }
 
-/** تقدير حجم الصورة بالبايت: dataURL تُحسب من طولها، والرابط البعيد من الأبعاد. */
+/** Estimate the image size in bytes: a dataURL from its length, a remote URL from its dimensions. */
 export function estimateImageBytes(img: CanvasImage | null): number {
   if (!img?.url) return 0;
   const u = img.url;
@@ -75,7 +75,7 @@ export function estimateImageBytes(img: CanvasImage | null): number {
   return Math.floor(w * h * 4);
 }
 
-/** الحد الأقصى للقطات: صور كبيرة (مطبوعات/كاميرات) = 10، متوسطة = 15، عادية = 25. */
+/** Snapshot cap: large images (print/camera) = 10, medium = 15, ordinary = 25. */
 export function getMaxHistory(img: CanvasImage | null): number {
   const bytes = estimateImageBytes(img);
   if (bytes > LARGE_BYTES) return LARGE_IMAGE_MAX_HISTORY;

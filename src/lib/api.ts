@@ -46,10 +46,28 @@ export function resolveUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+const FETCH_TIMEOUT_MS = 30_000;
+const JOB_POLL_INTERVAL_MS = 800;
+const JOB_POLL_MAX_ATTEMPTS = 120; // ~96 seconds max before giving up
+
+/** fetch with an explicit timeout — stops the app from hanging forever when the server does not respond. */
+async function fetchTimeout(url: string, init: RequestInit = {}, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch (err) {
+    if (ctrl.signal.aborted) throw new ApiError(408, "Request timed out — the backend may be offline");
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function uploadImage(file: File): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file, file.name);
-  const res = await fetch(`${API_BASE}/api/images/upload`, { method: "POST", body: form });
+  const res = await fetchTimeout(`${API_BASE}/api/images/upload`, { method: "POST", body: form });
   if (!res.ok) throw await readError(res);
   return res.json();
 }
@@ -59,7 +77,7 @@ export async function runOperation(
   imageId: string,
   params: Record<string, number | string> = {},
 ): Promise<OperationResponse> {
-  const res = await fetch(`${API_BASE}/api/operations/${name}`, {
+  const res = await fetchTimeout(`${API_BASE}/api/operations/${name}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image_id: imageId, params }),
@@ -69,7 +87,7 @@ export async function runOperation(
 }
 
 export async function pollJob(jobId: string): Promise<JobStatus> {
-  const res = await fetch(`${API_BASE}/api/operations/${jobId}/status`);
+  const res = await fetchTimeout(`${API_BASE}/api/operations/${jobId}/status`);
   if (!res.ok) throw await readError(res);
   return res.json();
 }
@@ -87,11 +105,12 @@ export async function runAndWait(
   }
   if (!first.job_id) throw new ApiError(500, "operation returned no job id");
 
-  while (true) {
-    await new Promise((r) => setTimeout(r, 800));
+  for (let attempt = 0; attempt < JOB_POLL_MAX_ATTEMPTS; attempt++) {
+    await new Promise((r) => setTimeout(r, JOB_POLL_INTERVAL_MS));
     const status = await pollJob(first.job_id);
     onStatus?.(status);
     if (status.status === "done" && status.result_url) return status.result_url;
     if (status.status === "error") throw new ApiError(500, status.error ?? "operation failed");
   }
+  throw new ApiError(504, "operation timed out");
 }

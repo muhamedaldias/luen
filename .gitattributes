@@ -1,46 +1,92 @@
-# Auto detect text files and perform LF normalization
+# ─────────────────────────────────────────────────────────────
+#  Lumen — Git attributes
+#
+#  Binary policy: store binaries directly in Git, without Git LFS.
+#  Rationale: tracked binaries total roughly 22 MB and no single file
+#  exceeds 5 MB, which sits comfortably inside GitHub's limits. Avoiding
+#  LFS also means a fresh clone gets the images and the model immediately,
+#  with no git-lfs install step.
+#
+#  Historical note: this repository once carried LFS pointer text for the
+#  src-tauri/icons files with no matching `filter=lfs` rule, so every
+#  clone received broken icons. The 47 images in guide-assets were equally
+#  at risk of being replaced by pointer text on `git add`. Both problems
+#  are fixed by storing the real bytes. Do not add `filter=lfs` here unless
+#  you actually move the assets into LFS and commit the rules in the same
+#  commit, so the pointers and the filter can never drift apart.
+# ─────────────────────────────────────────────────────────────
+
+# ── Auto-detection + normalize line endings to LF ──
 * text=auto eol=lf
 
-# Explicit text file formats
-*.ts text
-*.tsx text
-*.js text
-*.mjs text
-*.json text
-*.md text
-*.html text
-*.css text
-*.py text
-*.toml text
-*.yaml text
-*.yml text
+# ── Explicit text files ──
+*.ts    text
+*.tsx   text
+*.js    text
+*.jsx   text
+*.mjs   text
+*.cjs   text
+*.json  text
+*.md    text
+*.html  text
+*.css   text
+*.py    text
+*.rs    text
+*.toml  text
+*.yaml  text
+*.yml   text
+*.ini   text
+*.cfg   text
+*.txt   text
+*.sql   text
+*.sh    text
+*.ps1   text
+*.svg   text
 
-# Binary image formats
-*.png binary
-*.jpg binary
-*.jpeg binary
-*.gif binary
-*.webp binary
-*.ico binary
-*.bmp binary
-*.tiff binary
+# ── Images ──
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.bmp   binary
+*.tiff  binary
+*.tif   binary
+*.avif  binary
 
-# Binary models & data
-*.onnx binary
-*.bin binary
-*.pt binary
-*.pth binary
+# ── Models and binary data ──
+*.onnx        binary
+*.bin         binary
+*.pt          binary
+*.pth         binary
 *.safetensors binary
-*.pkl binary
-*.pickle binary
+*.pkl         binary
+*.pickle      binary
+*.npy         binary
+*.npz         binary
 
-# Documents
-*.pdf binary
+# ── Documents and archives ──
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.7z    binary
 
-# Archives & Executables
-*.zip binary
-*.tar.gz binary
-*.exe binary
-*.dll binary
-*.so binary
-*.wasm binary
+# ── Executables and modules ──
+*.exe   binary
+*.dll   binary
+*.so    binary
+*.dylib binary
+*.wasm  binary
+
+# ── Keep GitHub language stats honest ──
+# The illustrated guide and the docs are not source code; they should not be
+# counted toward the project's language breakdown.
+guide-assets/**          linguist-documentation
+docs/**                  linguist-documentation
+*.pdf                    linguist-documentation
+Lumen-User-Guide-AR.html linguist-documentation
+
+# Alembic templates are generated; keep them out of the language stats.
+backend/alembic/versions/** linguist-generated

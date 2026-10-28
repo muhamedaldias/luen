@@ -1,4 +1,4 @@
-// حفظ تلقائي في IndexedDB — أفضل جهد، بلا اعتماديات.
+// Autosave to IndexedDB — best effort, no dependencies.
 const DB_NAME = "lumen";
 const DB_VERSION = 1;
 const STORE = "autosave";

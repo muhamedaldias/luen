@@ -163,6 +163,7 @@ function AppearanceSection({ currentTheme, onThemeChange }: { currentTheme: stri
           value="Default"
           onChange={() => {}}
         />
+        <NotAppliedNote />
       </SettingBlock>
 
       {/* Font size */}
@@ -172,12 +173,14 @@ function AppearanceSection({ currentTheme, onThemeChange }: { currentTheme: stri
           value="13px"
           onChange={() => {}}
         />
+        <NotAppliedNote />
       </SettingBlock>
 
       {/* Panel animations */}
       <SettingBlock title="Animations" description="Panel transitions and micro-interactions.">
         <ToggleRow label="Enable panel transitions" defaultValue={true} />
         <ToggleRow label="Show hover tooltips" defaultValue={true} />
+        <NotAppliedNote />
       </SettingBlock>
     </div>
   );
@@ -265,13 +268,19 @@ function CanvasSection() {
           onChange={() => {}}
         />
       </SettingBlock>
-      <SettingBlock title="Grid & Guides" description="Overlay helpers on the canvas.">
-        <ToggleRow label="Show pixel grid at high zoom" defaultValue={true} />
-        <ToggleRow label="Show ruler guides" defaultValue={false} />
-        <ToggleRow label="Snap to grid" defaultValue={true} />
+      <SettingBlock title="Grid & Guides" description="Overlay helpers on the canvas — same controls as the status bar (G / R).">
+        {/* Duplicate toggles used to live here and did nothing, while the bottom bar owns the
+            working grid and ruler switches. They are now an explicit pointer instead of a misleading duplicate. */}
+        <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+          Use the <strong style={{ color: "var(--foreground)" }}>Grid</strong> and{" "}
+          <strong style={{ color: "var(--foreground)" }}>Rulers</strong> buttons in the status bar,
+          or press <kbd style={{ fontFamily: "monospace", color: "var(--foreground)" }}>G</kbd> /{" "}
+          <kbd style={{ fontFamily: "monospace", color: "var(--foreground)" }}>R</kbd>, to toggle them.
+        </p>
       </SettingBlock>
       <SettingBlock title="Canvas Resolution" description="Device pixel ratio for rendering.">
         <ToggleGroup options={["1x", "2x (Retina)", "Auto"]} value="2x (Retina)" onChange={() => {}} />
+        <NotAppliedNote />
       </SettingBlock>
       <SettingBlock title="Selection" description="Behavior of selection handles.">
         <ToggleRow label="Show transform handles" defaultValue={true} />
@@ -316,6 +325,7 @@ function ExportSection({ prefs, onChange }: { prefs?: ExportOptions; onChange?: 
         <ToggleRow label="Strip metadata (EXIF, XMP)" defaultValue={true} />
         <ToggleRow label="Embed color profile" defaultValue={true} />
         <ToggleRow label="Open file after export" defaultValue={false} />
+        <NotAppliedNote />
       </SettingBlock>
     </div>
   );
@@ -329,13 +339,26 @@ const shortcutRows = [
   { action: "Brush tool", keys: ["B"] },
   { action: "Eraser tool", keys: ["E"] },
   { action: "Text tool", keys: ["T"] },
+  { action: "Shape tool", keys: ["U"] },
+  { action: "Eyedropper", keys: ["I"] },
+  { action: "Smart Select", keys: ["W"] },
+  { action: "Magic Wand", keys: ["K"] },
+  { action: "Quick Select", keys: ["Q"] },
+  { action: "Pan", keys: ["H"] },
+  { action: "Zoom", keys: ["Z"] },
+  { action: "Toggle grid", keys: ["G"] },
+  { action: "Toggle rulers", keys: ["R"] },
+  { action: "Toggle library", keys: ["L"] },
+  { action: "Brush/Eraser size", keys: ["[", "]"] },
+  { action: "Levels", keys: ["⌘", "L"] },
+  { action: "Curves", keys: ["⌘", "M"] },
   { action: "Undo", keys: ["⌘", "Z"] },
   { action: "Redo", keys: ["⌘", "⇧", "Z"] },
-  { action: "Save", keys: ["⌘", "S"] },
+  { action: "Save project", keys: ["⌘", "S"] },
   { action: "Export", keys: ["⌘", "⇧", "E"] },
-  { action: "Zoom in", keys: ["⌘", "+"] },
-  { action: "Zoom out", keys: ["⌘", "−"] },
-  { action: "Fit to screen", keys: ["⌘", "0"] },
+  { action: "Mask from selection", keys: ["⌘", "⇧", "M"] },
+  { action: "Invert selection", keys: ["⌘", "⇧", "I"] },
+  { action: "Clear selection", keys: ["⌘", "⇧", "A"] },
 ];
 
 function ShortcutsSection() {
@@ -408,7 +431,8 @@ function AboutSection() {
 
       <p className="text-xs leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
         Lumen is a professional browser-based photo editor built for focused creative work.
-        AI features require an API key and are processed securely in your browser session.
+        Background removal runs entirely in your browser (ONNX Runtime + u2netp) — no API key
+        and no upload required. An optional local backend unlocks higher-quality blending.
       </p>
     </div>
   );
@@ -427,6 +451,19 @@ function SettingBlock({ title, description, children }: { title: string; descrip
       </div>
       {children}
     </div>
+  );
+}
+
+/** Explicit notice for preferences that are only displayed and not yet wired to the UI.
+ * Transparency beats a switch that looks active and does nothing. */
+function NotAppliedNote() {
+  return (
+    <p
+      className="text-xs rounded px-2.5 py-2"
+      style={{ background: "var(--secondary)", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
+    >
+      Preview only — this preference is not applied to the interface yet.
+    </p>
   );
 }
 

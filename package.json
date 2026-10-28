@@ -1,5 +1,5 @@
 {
-  "name": "figma-make-app",
+  "name": "lumen",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test-maskRefine.mjs && node scripts/test-blendModes.mjs && node scripts/test-histogram.mjs && node scripts/check-menu-wiring.mjs",
+    "verify": "npm run typecheck && npm run test && npm run build"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
     "fabric": "^6.4.0",

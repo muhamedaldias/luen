@@ -1,4 +1,4 @@
-﻿import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Upload, Plus, ZoomIn, ZoomOut, Maximize2, Type, Square, ImagePlus, Palette, FilePlus2 } from "lucide-react";
 import { Canvas as FabricCanvas, Textbox, Rect, Ellipse, Line, Image as FabricImage, PencilBrush, util, type FabricObject } from "fabric";
 import { ACCENT, boxRectProps, layerToStage, normAngle, textboxProps, type StageBox } from "../lib/fabricText";
@@ -28,6 +28,7 @@ interface CanvasProps {
   selectionInverted?: boolean;
   onMagicWandSelect?: (px: number, py: number, add: boolean, subtract: boolean) => void;
   onQuickSelect?: (seeds: Array<{ x: number; y: number }>, mode: "add" | "subtract") => void;
+  onPickColor?: (hex: string) => void;
   quickBrush?: number;
   eraserSize?: number;
   eraserOpacity?: number;
@@ -64,13 +65,13 @@ interface CanvasProps {
 }
 
 export interface FabricStageHandle {
-  /** دمج ضربات الفرشاة في الصورة — يعيد الرابط الجديد أو null إن لم يوجد شيء. */
+  /** Commit brush strokes into the image — returns the new URL, or null when there is nothing to do. */
   flushStrokes: () => Promise<string | null>;
   getStrokes: () => object[];
   setStrokes: (objs: object[]) => Promise<void>;
-  /** تعديل ضربة حيّة (عرض/لون/شفافية) من لوحة الخصائص. */
+  /** Adjust a live stroke (width/color/opacity) from the properties panel. */
   updateStroke: (id: string, patch: { width?: number; color?: string; opacity?: number }) => void;
-  /** إزالة ضربة حيّة من الكانفس. */
+  /** Remove a live stroke from the canvas. */
   removeStroke: (id: string) => void;
 }
 
@@ -103,7 +104,7 @@ interface FracBox {
   h: number;
 }
 
-/** انجذاب حواف/مركز الكائن المسحوب لأطراف اللوحة وطبقات أخرى (كسور نسبية). */
+/** Snap the dragged object's edges/center to the artboard edges and other layers (relative fractions). */
 function snapFractions(self: FracBox, others: FracBox[], threshX: number, threshY: number): { x: number; y: number } {
   const tx = [0, 0.5, 1];
   const ty = [0, 0.5, 1];
@@ -219,7 +220,7 @@ function StarterOverlay({ docLabel, onAction }: {
           Blank canvas{docLabel ? ` · ${docLabel}` : ""}
         </p>
         <p style={{ fontSize: 11, color: "var(--muted-foreground)", margin: "0 0 6px", lineHeight: 1.6 }}>
-          ابدأ التصميم بإضافة أول عنصر — أو اسحب صورة من جهازك.
+          Start your design by adding the first element — or drag an image from your device.
         </p>
         <button style={btn} onClick={() => onAction("text")}>
           <Type size={14} strokeWidth={2} style={{ color: "var(--accent)" }} /> Add text <span style={kbd}>T</span>
@@ -298,6 +299,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     docWidth = 1200,
     docHeight = 800,
     onFitScaleChange,
+    onPickColor,
   } = props;
 
   const [draggingOver, setDraggingOver] = useState(false);
@@ -354,8 +356,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   toolRef.current = activeTool;
   zoomRef.current = zoom;
 
-  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange, onStrokeAdded, onStrokesBaked, onDropAsset });
-  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange, onStrokeAdded, onStrokesBaked, onDropAsset };
+  const handlersRef = useRef({ onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange, onStrokeAdded, onStrokesBaked, onDropAsset, onPickColor });
+  handlersRef.current = { onSelectText, onAddText, onUpdateText, onDeleteText, onCommitHistory, onZoomChange, onImageError, onEditCommit, onSmartSelect, onImageDrop, onSelectLayer, onUpdateImageLayer, onUpdateShapeLayer, onShapeDraw, onBlankAction, onMagicWandSelect, onQuickSelect, onFitScaleChange, onStrokeAdded, onStrokesBaked, onDropAsset, onPickColor };
   const quickBrushRef = useRef(quickBrush);
   quickBrushRef.current = quickBrush;
   const eraserSizeRef = useRef(eraserSize);
@@ -391,7 +393,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
   orderRef.current = layerOrder;
 
   useEffect(() => {
-    // إعادة رسم الكانفس عند اكتمال تحميل أي خط — يمنع طباعة النص بخط بديل داخل البكسلات.
+    // Redraw the canvas once any font finishes loading — prevents text being rasterized with a fallback font.
     const rerender = () => fRef.current?.requestRenderAll();
     void document.fonts.ready.then(rerender);
     document.fonts.addEventListener("loadingdone", rerender);
@@ -473,7 +475,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     }
   }
 
-  /* ---------- إحداثيات ---------- */
+  /* ---------- Coordinates ---------- */
 
   const toStage = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
     const fc = fRef.current;
@@ -539,13 +541,13 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     syncTexts();
     try {
       (syncGenericLayers as unknown as () => void)?.();
-    } catch { /* تجاهل */ }
+    } catch { /* ignore */ }
     applyViewport();
   }, [applyViewport]);
 
-  /* ---------- مزامنة طبقات النص ---------- */
+  /* ---------- Text layer sync ---------- */
 
-  /** تحديث مستطيل الصندوق من هندسة الكائن الحالية (دون قراءة state قديمة). */
+  /** Refresh the box rectangle from the object's current geometry (without reading stale state). */
   const refreshRect = useCallback((id: string, tb: Textbox) => {
     const fc = fRef.current;
     if (!fc) return;
@@ -574,7 +576,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         rc.setCoords();
       }
     } catch {
-      /* تجاهل */
+      /* ignore */
     }
   }, []);
 
@@ -609,7 +611,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             tb.enterEditing();
             fc.requestRenderAll();
           } catch {
-            /* تجاهل — التحرير اليدوي متاح بالنقر المزدوج */
+            /* ignore — manual editing stays available via double-click */
           }
         }
       } else if (!transformSkip.current.has(l.id) && !editingSkip.current.has(l.id)) {
@@ -623,16 +625,16 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           }
           tb.setCoords();
         } catch {
-          /* طبقة تالفة — تُتجاهل بصمت */
+          /* Corrupt layer — skipped silently */
         }
       }
       try {
         (tb as unknown as { set: (o: object) => void }).set({
           globalCompositeOperation: (l as { blendMode?: string }).blendMode || "source-over",
         });
-      } catch { /* تجاهل */ }
+      } catch { /* ignore */ }
       refreshObjMask(tb, l.mask);
-      // مستطيل الصندوق الخلفي
+      // Background box rectangle
       refreshRect(l.id, tb);
     }
 
@@ -651,7 +653,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     }
     knownIds.current = seen;
 
-    // الخلفية دائماً في القاع
+    // The backdrop always sits at the bottom
     const bg = bgRef.current;
     if (bg) {
       const objs = fc.getObjects();
@@ -677,13 +679,13 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     }
   }, []);
 
-  /* ---------- طبقات عامة (صورة/شكل/تعبئة) ---------- */
+  /* ---------- Generic layers (image/shape/fill) ---------- */
 
   const syncGenericLayers = useCallback(() => {
     const fc = fRef.current;
     if (!fc) return;
     const box = viewRef.current.box;
-    // تعبئات: مستطيل يغطي الصندوق كاملاً (فوق الخلفية مباشرة)
+    // Fills: a rectangle covering the whole box (directly above the backdrop)
     {
       const seen = new Set<string>();
       for (const s of solidLayersRef.current) {
@@ -700,7 +702,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           rc.set({ left: box.x, top: box.y, width: Math.max(1, box.w), height: Math.max(1, box.h), fill: s.color, opacity: Math.max(0, Math.min(1, s.opacity / 100)), visible: s.visible !== false, globalCompositeOperation: (s as { blendMode?: string }).blendMode || "source-over" } as never);
           rc.setCoords();
           refreshObjMask(rc, s.mask);
-        } catch { /* تجاهل */ }
+        } catch { /* ignore */ }
       }
       for (const id of Array.from(solidMap.current.keys())) {
         if (!seen.has(id)) {
@@ -710,7 +712,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         }
       }
     }
-    // أشكال
+    // Shapes
     {
       const seen = new Set<string>();
       for (const s of shapeLayersRef.current) {
@@ -766,7 +768,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           }
           obj.setCoords();
           refreshObjMask(obj, s.mask);
-        } catch { /* تجاهل */ }
+        } catch { /* ignore */ }
       }
       for (const id of Array.from(shapeMap.current.keys())) {
         if (!seen.has(id)) {
@@ -779,7 +781,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         }
       }
     }
-    // صور: تحميل كسول — تُنشأ عند وصول الصورة
+    // Images: lazy load — created once the image arrives
     {
       const seen = new Set<string>();
       for (const l of imageLayersRef.current) {
@@ -796,7 +798,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             existing.set({ left, top, scaleX: wpx / iw, scaleY: hpx / ih, angle: l.rotation || 0, opacity: Math.max(0, Math.min(1, l.opacity / 100)), visible: l.visible !== false, selectable: !l.locked, evented: !l.locked, globalCompositeOperation: (l as { blendMode?: string }).blendMode || "source-over" } as never);
             existing.setCoords();
             refreshObjMask(existing, l.mask);
-          } catch { /* تجاهل */ }
+          } catch { /* ignore */ }
           continue;
         }
         const url = l.url;
@@ -817,17 +819,17 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             try {
               img.setCoords();
               refreshObjMask(img, cur?.mask ?? l.mask);
-            } catch { /* تجاهل */ }
+            } catch { /* ignore */ }
             fc2.add(img);
-            // ترتيب: خلفية ثم تعبئات ثم صور ثم أشكال ثم نصوص
+            // Order: backdrop, then fills, then images, then shapes, then text
             try {
               fc2.remove(img);
               const idx = 1 + solidMap.current.size;
               fc2.insertAt(Math.max(1, idx), img);
-            } catch { try { fc2.add(img); } catch { /* تجاهل */ } }
+            } catch { try { fc2.add(img); } catch { /* ignore */ } }
             fc2.requestRenderAll();
           })
-          .catch(() => { /* فشل تحميل طبقة — تُتجاهل بصمت */ });
+          .catch(() => { /* Layer failed to load — skipped silently */ });
       }
       for (const id of Array.from(imgLayerMap.current.keys())) {
         if (!seen.has(id)) {
@@ -840,7 +842,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         }
       }
     }
-    // ترتيب: إن وُجد layerOrder موحد نطبقه، وإلا الخلفية أولاً (توافق قديم)
+    // Order: apply the unified layerOrder when present, otherwise the backdrop first (legacy fallback)
     try {
       const order = orderRef.current;
       const bg = bgRef.current;
@@ -875,13 +877,13 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             try {
               const f = fRef.current;
               if (f && (f.getObjects() as unknown[]).includes(o)) f.bringObjectToFront(o);
-            } catch { /* تجاهل */ }
+            } catch { /* ignore */ }
           }
         }
         try {
           const strokes = fc.getObjects().filter((o) => (o as unknown as Record<string, unknown>).isStroke);
           for (const s of strokes) fc.bringObjectToFront(s);
-        } catch { /* تجاهل */ }
+        } catch { /* ignore */ }
       }
       if (bg) {
         try {
@@ -895,7 +897,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           }
         }
       }
-    } catch { /* تجاهل */ }
+    } catch { /* ignore */ }
     fc.requestRenderAll();
   }, []);
 
@@ -910,7 +912,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     });
   }
 
-  /* ---------- الدمج (raster commit) ---------- */
+  /* ---------- Commit (raster commit) ---------- */
 
   const commitRaster = useCallback(async (region?: StageBox | null, includeTemp?: FabricObject | null): Promise<string | null> => {
     const fc = fRef.current;
@@ -965,8 +967,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     });
     fc.requestRenderAll();
     if (!url) {
-      // السبب الشائع: صورة خلفية من origin آخر بلا CORS لوّثت الكانفس.
-      // الحل: أعد فتح الصورة كـ dataURL (نظيفة) من الملف الأصلي.
+      // The usual cause: a backdrop image from another origin without CORS tainted the canvas.
+      // Fix: reopen the image as a clean dataURL from the original file.
       showToast("Export blocked — image is tainted (CORS). Re-open the image from file to fix.");
       handlersRef.current.onImageError?.(
         "Save blocked: the canvas is tainted by a cross-origin image without CORS. " +
@@ -975,7 +977,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       return null;
     }
     try {
-      // dataURL ناتجة من نفس الكانفس: لا تحتاج crossOrigin إطلاقاً.
+      // The dataURL comes from the same canvas: it needs no crossOrigin at all.
       const img = await FabricImage.fromURL(url);
       img.set({ selectable: false, evented: false });
       const old = bgRef.current;
@@ -984,7 +986,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       fc.insertAt(0, img);
       viewRef.current.natW = img.width;
       viewRef.current.natH = img.height;
-      // إزالة الضربات المدمجة + المؤقت
+      // Drop the committed strokes and the temporary ones
       const strokes = fc.getObjects().filter((o) => (o as unknown as Record<string, unknown>).isStroke);
       if (strokes.length) fc.remove(...strokes);
       if (g.temp) {
@@ -1013,8 +1015,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     };
   }
 
-  /** نبضة الممحاة مرسومة مسبقاً على كانفس صغير: التدرّج الشعاعي يجعل الصلابة
-   *  (hardness) هي نصف قطر النواة الصلبة، والشفافية هي ألفا النواة. */
+  /** The eraser dab is pre-rendered onto a small canvas: the radial gradient makes hardness
+   *  the radius of the solid core, and opacity the alpha of that core. */
   function getDabSprite(): HTMLCanvasElement {
     const size = Math.max(2, Math.round(eraserSizeRef.current));
     const hardness = Math.max(0, Math.min(100, eraserHardnessRef.current)) / 100;
@@ -1152,13 +1154,14 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       ctx.drawImage(el, Math.floor(fx * (el.naturalWidth || el.width)), Math.floor(fy * (el.naturalHeight || el.height)), 1, 1, 0, 0, 1, 1);
       const d = ctx.getImageData(0, 0, 1, 1).data;
       const hex = "#" + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("");
+      handlersRef.current.onPickColor?.(hex);
       showToast("Picked " + hex);
     } catch {
       showToast("Could not sample color");
     }
   }
 
-  /* ---------- واجهة imperative ---------- */
+  /* ---------- Imperative handle ---------- */
 
   useImperativeHandle(ref, () => ({
     flushStrokes: async () => {
@@ -1199,12 +1202,12 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
             (o as unknown as Record<string, unknown>).isStroke = true;
             fc.add(o);
           } catch {
-            /* تجاهل الكائن التالف */
+            /* ignore the corrupt object */
           }
         }
         fc.requestRenderAll();
       } catch {
-        /* فشل الاستعادة — تُتجاهل الضربات */
+        /* Restore failed — the strokes are skipped */
       }
     },
     updateStroke: (id: string, patch: { width?: number; color?: string; opacity?: number }) => {
@@ -1237,7 +1240,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     },
   }), [commitRaster]);
 
-  /* ---------- التهيئة ---------- */
+  /* ---------- Initialization ---------- */
 
   useEffect(() => {
     const el = elRef.current;
@@ -1265,7 +1268,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       fc.selectionBorderColor = ACCENT;
       fc.selectionLineWidth = 1.5;
     } catch {
-      /* تجاهل */
+      /* ignore */
     }
     fRef.current = fc;
 
@@ -1345,7 +1348,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       if (tool === "smart-select") {
         if (hasImageRef.current) {
           showToast("Removing background…");
-          // تمرير نقرة المستخدم كمرساة للموضوع: أدق تعريف ممكن لما يريد إبقاءه.
+          // Pass the user's click as the subject anchor: the most precise statement of what should be kept.
           const p = toStage(e.clientX, e.clientY);
           const box = viewRef.current.box;
           const fx = (p.x - box.x) / Math.max(1, box.w);
@@ -1431,7 +1434,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         return;
       }
       if (tool === "eraser") {
-        // ادمج الضربات الحيّة أولاً حتى تمسح الممحاة فوقها فعلاً.
+        // Commit the live strokes first so the eraser actually wipes over them.
         const hasLiveStrokes =
           fRef.current?.getObjects().some((o) => (o as unknown as Record<string, unknown>).isStroke) ?? false;
         void (async () => {
@@ -1642,7 +1645,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           opacity: brushOpacityRef.current,
         });
       } catch {
-        /* تجاهل */
+        /* ignore */
       }
     }) as never);
     const singleSelect = (opt: unknown) => {
@@ -1652,7 +1655,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           fc.discardActiveObject();
           fc.requestRenderAll();
         } catch {
-          /* تجاهل */
+          /* ignore */
         }
         return;
       }
@@ -1672,7 +1675,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           fc.discardActiveObject();
           fc.requestRenderAll();
         } catch {
-          /* تجاهل */
+          /* ignore */
         }
       }
     };
@@ -1699,7 +1702,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       const id = t?.layerId;
       if (typeof id !== "string") return;
       const kind = (t?.layerKind as string) || "text";
-      // طبقة عامة: تحديث x/y/w/h/rotation نسبياً
+      // Generic layer: update x/y/w/h/rotation relatively
       if (kind === "image" || kind === "shape") {
         try {
           const box = viewRef.current.box;
@@ -1710,7 +1713,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           const rot = normAngle(((t as unknown as { angle?: number }).angle || 0));
           const nx = Math.min(0.95, Math.max(-0.2, (((t as unknown as { left?: number }).left ?? 0) - box.x) / Math.max(1, box.w)));
           const ny = Math.min(0.95, Math.max(-0.2, (((t as unknown as { top?: number }).top ?? 0) - box.y) / Math.max(1, box.h)));
-          // للخطوط: العرض من المسافة بين النقطتين
+          // For lines: width comes from the distance between the two points
           let wFrac = Math.min(1.2, Math.max(0.02, wPx / Math.max(1, box.w)));
           let hFrac = Math.min(1.2, Math.max(0.02, hPx / Math.max(1, box.h)));
           const selfId = id as string;
@@ -1739,11 +1742,11 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           }
           handlersRef.current.onCommitHistory?.(kind === "image" ? "Move image layer" : "Move shape");
           fRef.current?.requestRenderAll();
-        } catch { /* تجاهل */ }
+        } catch { /* ignore */ }
         return;
       }
       transformSkip.current.delete(id as string);
-      // تطبيع القياس مباشرة من الكائن (لا قراءة state قديمة): العرض إلى width وإعادة scale إلى 1
+      // Normalize the scale straight from the object (no stale state): bake the width into `width` and reset scale to 1
       const box = viewRef.current.box;
       const wFrac = Math.min(1.2, Math.max(0.05, (t.width * (t.scaleX || 1)) / Math.max(1, box.w)));
       const rot = normAngle(t.angle || 0);
@@ -1752,11 +1755,11 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         try {
           t.initDimensions();
         } catch {
-          /* تجاهل */
+          /* ignore */
         }
         t.setCoords();
       } catch {
-        /* تجاهل */
+        /* ignore */
       }
       const rawNX = Math.min(0.95, Math.max(-0.2, (t.left - box.x) / Math.max(1, box.w)));
       const rawNY = Math.min(0.95, Math.max(-0.2, (t.top - box.y) / Math.max(1, box.h)));
@@ -1802,7 +1805,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ---------- تحميل الخلفية ---------- */
+  /* ---------- Backdrop loading ---------- */
 
   useEffect(() => {
     const fc = fRef.current;
@@ -1824,8 +1827,8 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     }
     setImgError(null);
     let cancelled = false;
-    // data:/blob:/relative = نفس الـorigin → نظيفة بلا crossOrigin.
-    // http(s) بعيدة فقط تحتاج anonymous (وتتطلب ACAO من السيرفر وإلا فشلت بوضوح).
+    // data:/blob:/relative = same origin → clean, no crossOrigin needed.
+    // Only remote http(s) needs anonymous (and requires ACAO from the server, otherwise it fails loudly).
     const isRemote = /^https?:\/\//i.test(imageUrl);
     FabricImage.fromURL(imageUrl, isRemote ? { crossOrigin: "anonymous" } : {})
       .then((img) => {
@@ -1838,7 +1841,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         fc2.insertAt(0, img);
         viewRef.current.natW = img.width || 1;
         viewRef.current.natH = img.height || 1;
-        // إسقاط الضربات القديمة عند تبديل الصورة جذرياً
+        // Drop the old strokes when the image is replaced wholesale
         const strokes = fc2.getObjects().filter((o) => (o as unknown as Record<string, unknown>).isStroke);
         if (strokes.length) fc2.remove(...strokes);
         relayout();
@@ -1855,7 +1858,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     };
   }, [hasImage, imageUrl, relayout]);
 
-  /* ---------- طبقة تحديد البكسل (marching ants) ---------- */
+  /* ---------- Pixel selection layer (marching ants) ---------- */
 
   useEffect(() => {
     const fc = fRef.current;
@@ -1944,7 +1947,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     };
   }, [selectionMask, selectionInverted, relayout]);
 
-  /* ---------- الطبقات/التحديد/الأداة/الزوم ---------- */
+  /* ---------- Layers/selection/tool/zoom ---------- */
 
   useEffect(() => {
     syncTexts();
@@ -1987,17 +1990,17 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         for (const o of objFor(ref.kind, ref.id)) {
           try {
             if ((fc.getObjects() as unknown[]).includes(o)) fc.bringObjectToFront(o);
-          } catch { /* تجاهل */ }
+          } catch { /* ignore */ }
         }
       }
       const bg = bgRef.current;
       if (bg) {
         try {
           if ((fc.getObjects() as unknown[]).includes(bg as unknown)) fc.sendObjectToBack(bg);
-        } catch { /* تجاهل */ }
+        } catch { /* ignore */ }
       }
       fc.requestRenderAll();
-    } catch { /* تجاهل */ }
+    } catch { /* ignore */ }
   }, [layerOrder]);
 
   useEffect(() => {
@@ -2017,7 +2020,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           fc.setActiveObject(tb);
           fc.requestRenderAll();
         } catch {
-          /* تجاهل */
+          /* ignore */
         }
       }
       return;
@@ -2029,7 +2032,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
           fc.setActiveObject(obj);
           fc.requestRenderAll();
         } catch {
-          /* تجاهل */
+          /* ignore */
         }
       }
     }
@@ -2047,13 +2050,13 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
         brush.width = brushSizeRef.current;
         fc.freeDrawingBrush = brush;
       } catch {
-        /* تجاهل */
+        /* ignore */
       }
     } else if (fc.freeDrawingBrush) {
       try {
         fc.freeDrawingBrush = undefined as never;
       } catch {
-        /* تجاهل */
+        /* ignore */
       }
     }
     try {
@@ -2061,7 +2064,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
       fc.defaultCursor = TOOL_CURSORS[activeTool] ?? "default";
       fc.freeDrawingCursor = "crosshair";
     } catch {
-      /* تجاهل */
+      /* ignore */
     }
     fc.requestRenderAll();
   }, [activeTool, hasImage, brushSize, brushColor]);
@@ -2070,7 +2073,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     relayout();
   }, [zoom, relayout]);
 
-  /* ---------- أسهم التحريك والحذف ---------- */
+  /* ---------- Nudge and delete arrows ---------- */
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -2104,7 +2107,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedTextId]);
 
-  /* ---------- إدخال/سحب الملفات ---------- */
+  /* ---------- File input/drop ---------- */
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -2119,7 +2122,7 @@ const Canvas = forwardRef<FabricStageHandle, CanvasProps>(function Canvas(props,
     (e: React.DragEvent) => {
       e.preventDefault();
       setDraggingOver(false);
-      // أصل من مكتبة الأصول: مرّر معرّفه مع موضع الإفلات المُطبَّع
+      // Asset from the asset library: forward its id along with the normalized drop position
       const assetId = e.dataTransfer.getData("application/x-lumen-asset");
       if (assetId) {
         const p = toStage(e.clientX, e.clientY);

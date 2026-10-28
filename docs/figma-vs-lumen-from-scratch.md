@@ -1,164 +1,164 @@
-# Figma مقابل Lumen — وماذا يلزم للتصميم من الصفر
+# Figma versus Lumen — and what designing from scratch would take
 
-> **المنهجية:** فحص مباشر لكود المشروع (`src/` + `backend/`) + بحث ويب محدّث عن قدرات Figma حتى Config 2026.
-> **التاريخ:** سبتمبر 2026 | **الحالة:** تحليل استراتيجي — ليس خطة تنفيذ بعد.
+> **Method:** direct inspection of the project source (`src/` + `backend/`) plus current web research on Figma's capabilities through Config 2026.
+> **Date:** September 2026 | **Status:** strategic analysis — not yet an implementation plan.
 
 ---
 
-## الخلاصة التنفيذية (اقرأ هذا أولًا)
+## Executive summary (read this first)
 
-**Figma وLumen ليسا نفس الفئة أصلًا** — وهذه أهم جملة في التقرير:
+**Figma and Lumen are not the same category at all** — and that is the most important sentence in this document:
 
-| | Figma | Lumen (مشروعنا) |
+| | Figma | Lumen (this project) |
 |---|---|---|
-| **الفئة** | أداة تصميم واجهات **متجهة (Vector)** وتعاونية | محرر صور **نقطي (Raster)** بأسلوب Photopea |
-| **المادة الخام** | أشكال ونصوص قابلة للتحجيم بلا نهاية | بكسلات صور فوتوغرافية |
-| **السؤال الذي يجيب عنه** | "كيف نبني واجهة متجاوبة يعمل عليها فريق؟" | "كيف نحسّن/نركّب هذه الصورة؟" |
+| **Category** | Collaborative **vector** UI design tool | **Raster** image editor in the Photopea tradition |
+| **Raw material** | Shapes and text that scale without limit | Pixels from photographs |
+| **The question it answers** | "How do we build a responsive interface a team can work on?" | "How do we improve or composite this image?" |
 
-**والنتيجة العملية:** ~70% مما يفعله Figma **لا يجب** تقليده (تعاون لحظي، فروع، تسليم للمطورين…) لأنه يخدم فئة أخرى. و~30% **يجب** استعارته — وهو بالضبط ما يحتاجه "التصميم من الصفر". الجزء الثاني من التقرير يحدد هذه الـ30% بدقة مع خارطة طريق.
+**The practical consequence:** roughly 70% of what Figma does should **not** be imitated (real-time collaboration, branching, developer handoff) because it serves a different category. About 30% **should** be borrowed — and that 30% is exactly what "designing from scratch" requires. Part 2 of this document pins down that 30% precisely, with a roadmap.
 
 ---
 
-## الجزء 1 — ماذا يفعل Figma ولا يفعله Lumen؟
+## Part 1 — What Figma does that Lumen does not
 
-### 1-أ. نموذج المستند والرسم
+### 1-a. Document and drawing model
 
-| القدرة | Figma | Lumen اليوم | الفجوة | هل تستحق؟ |
+| Capability | Figma | Lumen today | Gap | Worth it? |
 |---|---|---|---|---|
-| قلم Bezier وشبكات Vector Networks | نعم — تحرير عقدي كامل | ❌ لا يوجد إطلاقًا (فحص الكود: صفر ذكر لـ bezier/path) | كبيرة | ✅ نعم — حجر أساس التصميم من الصفر |
-| عمليات Boolean (اتحاد/طرح/تقاطع) | نعم | ❌ لا يوجد | كبيرة | ✅ نعم — مع القلم |
-| أشكال أساسية قابلة للتحرير | نعم | ⚠️ جزئي — مستطيل/إهليجي/خط/سهم كطبقات overlay تُرسم تفاعليًا (أُضيفت مؤخرًا) لكن بلا تحرير عقدي | متوسطة | ✅ تحسين تدريجي |
-| Artboards / صفحات متعددة | نعم (Frames + Pages) | ❌ لوحة واحدة فقط | كبيرة | ✅ نعم — شرط أي تصميم حقيقي |
-| مساطر وشبكات وخطوط إرشاد + Snapping | نعم | ❌ لا يوجد (فحص الكود: صفر ذكر) | متوسطة | ✅ نعم — رخيص الأثر، عالي القيمة |
-| تنقيط/بكسل (Pixel preview) | نعم | ✅ نعم ضمنيًا (كل شيء بكسلات) | — | — |
+| Bezier pen and Vector Networks | Yes — full node editing | No, none at all (code scan: zero references to bezier/path) | Large | Yes — the foundation of designing from scratch |
+| Boolean operations (union/subtract/intersect) | Yes | No | Large | Yes — pairs with the pen |
+| Editable primitive shapes | Yes | Partial — rectangle/ellipse/line/arrow as overlay layers drawn interactively (added recently), but with no node editing | Medium | Incremental improvement |
+| Artboards / multiple pages | Yes (Frames + Pages) | No — a single canvas | Large | Yes — a prerequisite for any real design |
+| Rulers, grids, guides, and snapping | Yes | No (code scan: zero references) | Medium | Yes — cheap to build, high value |
+| Pixel preview | Yes | Implicitly yes (everything is pixels) | — | — |
 
-### 1-ب. النص والأنماط
+### 1-b. Text and styles
 
-| القدرة | Figma | Lumen اليوم | الفجوة | هل تستحق؟ |
+| Capability | Figma | Lumen today | Gap | Worth it? |
 |---|---|---|---|---|
-| محرك نصوص (عائلات/أوزان/تباعد/ارتفاع سطر) | نعم + خطوط متغيرة | ✅ جيد — عائلات/أوزان/مائل/تدرجات/ظلال/صندوق | صغيرة | تحسينات فقط |
-| أنماط مشتركة Styles (ألوان/نصوص/تأثيرات) | نعم — تحديث شامل بضغطة | ❌ كل طبقة تحمل نسختها الخاصة | متوسطة | ✅ نعم — مرحلة ثانية |
-| شبكات تخطيط (Layout grids) | نعم | ❌ لا يوجد | صغيرة-متوسطة | لاحقًا |
+| Text engine (families/weights/tracking/leading) | Yes, plus variable fonts | Good — families/weights/italics/gradients/shadows/box | Small | Refinements only |
+| Shared styles (colors/text/effects) | Yes — one click updates everything | No — every layer carries its own copy | Medium | Yes — second phase |
+| Layout grids | Yes | No | Small to medium | Later |
 
-### 1-ج. الأنظمة والمكونات (Design Systems)
+### 1-c. Design systems and components
 
-| القدرة | Figma | Lumen اليوم | الفجوة | هل تستحق؟ |
+| Capability | Figma | Lumen today | Gap | Worth it? |
 |---|---|---|---|---|
-| Components + Instances (نسخ ذكية تتحدث) | نعم + Variants + Slots (2026) | ❌ لا يوجد (التكرار = نسخ جامدة) | كبيرة جدًا | ⚠️ جزئيًا — "رموز" مبسطة تكفي مشروع تخرج |
-| Auto Layout (تخطيط متجاوب) | نعم منذ 2019 | ❌ تموضع مطلق فقط (إحداثيات نسبية 0..1) | كبيرة | ⚠️ نسخة مبسطة (صف/عمود + تباعد) تكفي |
-| Variables (توكنز) | نعم | ❌ لا يوجد | متوسطة | لاحقًا مع الأنماط |
+| Components + Instances (copies that stay in sync) | Yes, plus Variants + Slots (2026) | No (duplication means rigid copies) | Very large | Partially — simplified "symbols" are enough for a graduation project |
+| Auto Layout (responsive layout) | Yes, since 2019 | No — absolute positioning only (fractional coordinates 0..1) | Large | A simplified version (row/column + gap) is enough |
+| Variables (tokens) | Yes | No | Medium | Later, alongside styles |
 
-### 1-د. التعاون والنمذجة والتسليم
+### 1-d. Collaboration, prototyping, and handoff
 
-| القدرة | Figma | Lumen اليوم | الفجوة | هل تستحق؟ |
+| Capability | Figma | Lumen today | Gap | Worth it? |
 |---|---|---|---|---|
-| تحرير لحظي متعدد المستخدمين + تعليقات | نعم — جوهر المنتج | ❌ مستخدم واحد محلي | ضخمة | ❌ لا — خارج الفئة والميزانية تمامًا |
-| Prototyping تفاعلي + Motion timeline (2026) | نعم | ❌ لا يوجد | ضخمة | ❌ لا — منتج آخر |
-| Dev Mode + MCP + Code layers (2026) | نعم | ❌ لا يوجد | ضخمة | ❌ لا |
-| Version history + Branches | نعم | ⚠️ بديل محلي: Undo بـ25 لقطة فقط | متوسطة | ✅ حفظ ملفات مشاريع (Lumen format) يكفي |
-| Plugins + AI Agent + Weave (2026) | نعم | ❌ لا يوجد (لوحة Agent محجوزة فقط) | ضخمة | ❌ لاحقًا طويل الأمد |
+| Real-time multi-user editing + comments | Yes — the core of the product | No — single local user | Huge | No — outside the category and the budget entirely |
+| Interactive prototyping + motion timeline (2026) | Yes | No | Huge | No — that is a different product |
+| Dev Mode + MCP + Code layers (2026) | Yes | No | Huge | No |
+| Version history + branches | Yes | Local substitute only: undo with 25 snapshots | Medium | Project file saving (the `.lumen` format) is sufficient |
+| Plugins + AI Agent + Weave (2026) | Yes | No (the Agent panel is only reserved space) | Huge | Long-term, later |
 
-### 1-هـ. معالجة الصور (حيث **نتفوق** نحن)
+### 1-e. Image processing (where **we** are ahead)
 
-| القدرة | Figma | Lumen اليوم |
+| Capability | Figma | Lumen today |
 |---|---|---|
-| تنقيح بكسل حقيقي (فلاتر/تعديل/حدة) | ❌ ضعيف جدًا — طبقات صور للعرض فقط | ✅ 22 عملية (Pillow + OpenCV) + وضع أوفلاين |
-| إزالة خلفية/كائن | ❌ لا يوجد | ✅ rembg + Inpaint |
-| دمج Poisson/Seamless | ❌ لا يوجد | ✅ seamlessClone |
-| عمل بلا إنترنت | ❌ سحابي إجباري | ✅ الواجهة تعمل محليًا + تطبيق Tauri |
+| Real pixel retouching (filters/adjustments/sharpness) | Very weak — image layers are for display only | 36 operations (Pillow + OpenCV) plus an offline mode |
+| Background or object removal | No | rembg + inpainting |
+| Poisson / seamless blending | No | `seamlessClone` |
+| Working without internet | No — cloud only | The frontend runs locally, plus a Tauri app |
 
-**الخلاصة:** Figma لا يستطيع فعل ما يفعله Lumen أصلًا — المقارنة الصحيحة ليست "من الأفضل" بل "أي فئة نبني؟".
+**Conclusion:** Figma cannot do what Lumen does in the first place — so the right comparison is not "which is better" but "which category are we building?".
 
 ---
 
-## الجزء 2 — التصميم من الصفر: كيف سيكون، وماذا نحتاج؟
+## Part 2 — Designing from scratch: what it looks like, and what it needs
 
-### 2-1. ماذا يعني "التصميم من الصفر"؟
+### 2-1. What does "designing from scratch" mean?
 
-يعني أن يفتح المستخدم **لوحة فارغة** ويخرج بتصميم (بوستر، غلاف، واجهة) دون أي صورة جاهزة — باستخدام: أشكال متجهة + نصوص + ألوان + ترتيب طبقات + تصدير. **لا يعني** منافسة Figma في التعاون والأنظمة.
+It means a user opens a **blank canvas** and leaves with a design (a poster, a cover, a UI) without any ready-made image — using vector shapes, text, colors, layer ordering, and export. It does **not** mean competing with Figma on collaboration and design systems.
 
-### 2-2. الوضع الحالي بصراحة: نحن على بُعد ~40% منه، لا صفر
+### 2-2. The honest current state: we are about 40% of the way there, not at zero
 
-ما يعمل فعلًا اليوم (تم التحقق بالكود والتجربة):
+What genuinely works today (verified against the code and by using the app):
 
-- ✅ لوحة فارغة (`New canvas`) + رسم مستطيل/إهليجي تفاعلي + نصوص غنية + تعبئات لونية + طبقات صور
-- ✅ نظام طبقات كامل: ترتيب/مجموعات/محاذاة/توزيع/16 blend mode/شفافية/قفل
-- ✅ Inspector سياقي + Undo تكيفي + تصدير PNG عالي الجودة
+- Blank canvas (`New canvas`), interactive rectangle/ellipse drawing, rich text, solid fills, and image layers
+- A complete layer system: reordering, groups, align, distribute, 16 blend modes, opacity, and locking
+- A contextual inspector, adaptive undo, and high-quality PNG export
 
-**التجربة الذهنية:** صمّم بوستر "خصم 50%" الآن: خلفية تعبئة ← مستطيل ملوّن ← 3 طبقات نص ← تصدير. **هذا يعمل اليوم.** ما لا يعمل هو أي شيء يحتاج منحنيات حرة أو صفحات أو تصدير متجه.
+**A mental walkthrough:** design a "50% off" poster right now — filled background, colored rectangle, three text layers, export. **That works today.** What does not work is anything needing free curves, multiple pages, or vector export.
 
-### 2-3. الفجوات السبع — لكل واحدة: ماذا/لماذا/كيف/الفرق/الأفضل
+### 2-3. The seven gaps — each with what/why/how/difference/best choice
 
-#### 1) قلم Bezier + تحرير العقد (الأهم — Effort: كبير ~3-4 أسابيع)
+#### 1) Bezier pen + node editing (the most important — Effort: large, roughly 3-4 weeks)
 
-- **ماذا:** أداة Pen: نقرات = نقاط، سحب = مقابض منحنيات، إغلاق المسار، تحريك العقد لاحقًا.
-- **لماذا:** بدونه كل "تصميم من الصفر" = مستطيلات ونصوص فقط — لا شعارات ولا أيقونات ولا أشكال حرة. هذا هو الفرق الجوهري بين "محرر صور" و"أداة تصميم".
-- **كيف:** طبقة جديدة `path` تحمل مصفوفة نقاط/مقابض (نموذج بيانات بسيط، لا حاجة لشبكات Figma المعقدة) + عرضها عبر Fabric `Path` + وضع تحرير يعرض العقد كمقابض قابلة للسحب. التصدير: رسم المسار على كانفس التصدير (موجودة البنية في `exportComposite.ts`).
-- **الفرق عن Figma:** Figma يستخدم Vector Networks (تفرعات بأكثر من خطين في العقدة) — نحن نكتفي بمسارات Bezier كلاسيكية (مثل Photopea/PowerPoint). أبسط بعشر مرات ويكفي 95% من الحالات.
-- **الأفضل:** Bezier كلاسيكي — قرار واعٍ بالتبسيط، لا نقص.
+- **What:** a Pen tool: click to place points, drag to pull curve handles, close the path, move nodes afterwards.
+- **Why:** without it, every "design from scratch" is just rectangles and text — no logos, no icons, no freeform shapes. This is the fundamental difference between an image editor and a design tool.
+- **How:** a new `path` layer holding an array of points and handles (a simple data model; Figma's complex networks are not needed), rendered through Fabric's `Path`, plus an edit mode that shows the nodes as draggable handles. For export, draw the path onto the export canvas — the structure already exists in `exportComposite.ts`.
+- **Difference from Figma:** Figma uses Vector Networks, where more than two segments can meet at a node. We settle for classic Bezier paths, as Photopea and PowerPoint do. Ten times simpler and sufficient for 95% of cases.
+- **Best choice:** classic Bezier — a deliberate simplification, not a shortfall.
 
-#### 2) عمليات Boolean (Effort: متوسط ~1-2 أسبوع، بعد القلم)
+#### 2) Boolean operations (Effort: medium, roughly 1-2 weeks, after the pen)
 
-- **ماذا:** اتحاد/طرح/تقاطع/استثناء بين شكلين لإنتاج أشكال مركبة (مثلًا: هلال = دائرتان مطروحتان).
-- **لماذا:** بدونها يبقى المستخدم محبوسًا في الأشكال البدائية.
-- **كيف:** مكتبة جاهزة (مثل `paper.js` للمسارات) أو خوارزمية clipper تُنفذ على نموذج المسار ثم تُخزن النتيجة كطبقة path جديدة (تدميرية مقبولة — مثل Flatten).
-- **الأفضل:** نتيجة مدمجة لا حية (Figma يحتفظ بها حية وقابلة للفك — ترف لا نحتاجه).
+- **What:** union/subtract/intersect/exclude between two shapes to produce compound shapes (a crescent, for example, is one circle subtracted from another).
+- **Why:** without them the user stays trapped in primitive shapes.
+- **How:** an existing library such as `paper.js` for paths, or a clipper algorithm, operating on the path model and storing the result as a new path layer. A destructive result is acceptable, the way Flatten works.
+- **Best choice:** a flattened result rather than a live one. Figma keeps it live and reversible, which is a luxury we do not need.
 
-#### 3) Artboards/صفحات + تصدير متعدد (Effort: متوسط ~2 أسابيع)
+#### 3) Artboards/pages + multi-export (Effort: medium, roughly 2 weeks)
 
-- **ماذا:** عدة لوحات بأحجام مسماة (بوستر A3، ستوري 1080×1920…) في مستند واحد + تصدير الكل دفعة.
-- **لماذا:** المصمم الحقيقي يعمل على نسخ ومقاسات معًا — لوحة واحدة = لعبة لا أداة.
-- **كيف:** `artboards: [{id, name, w, h}]` في الحالة + Canvas يعرض اللوحات متجاورة + الطبقات ترتبط بـ `artboardId` + حلقة تصدير.
-- **الفرق عن Figma:** بلا Pages/Hierarchy معقدة — قائمة لوحات مسطحة تكفي.
+- **What:** several canvases at named sizes (A3 poster, 1080×1920 story) in one document, plus batch export of all of them.
+- **Why:** a real designer works on several versions and sizes at once — a single canvas is a toy, not a tool.
+- **How:** `artboards: [{id, name, w, h}]` in state, a canvas that lays artboards side by side, layers associated with an `artboardId`, and an export loop.
+- **Difference from Figma:** no Pages or hierarchy — a flat list of artboards is enough.
 
-#### 4) مساطر وشبكات وSnapping (Effort: صغير ~أيام — أعلى عائد/جهد)
+#### 4) Rulers, grids, and snapping (Effort: small, roughly days — the best return per unit of effort)
 
-- **ماذا:** مسطرة محيطية + شبكة اختيارية + انجذاب تلقائي للحواف والمراكز أثناء السحب.
-- **لماذا:** الفرق بين تصميم "مرتب" و"مائل بكسلين" — أرخص ميزة احترافية.
-- **كيف:** overlay في Canvas + حساب انجذاب في `object:moving` (البنية موجودة في `liveback`) + Guides قابلة للسحب من المسطرة تُخزن في الحالة.
-- **الأفضل:** نعم، تُبنى أولًا قبل القلم (تُستخدم فورًا مع الأشكال الحالية).
+- **What:** an edge ruler, an optional grid, and automatic snapping to edges and centers while dragging.
+- **Why:** it is the difference between a design that is "aligned" and one that is "two pixels off" — the cheapest professional feature available.
+- **How:** an overlay in the canvas plus snapping math in `object:moving` (the structure already exists) and guides dragged out of the ruler and stored in state.
+- **Best choice:** yes, and build it before the pen — it pays off immediately with the shapes we already have.
 
-#### 5) تصدير SVG/PDF (Effort: متوسط ~1-2 أسبوع)
+#### 5) SVG/PDF export (Effort: medium, roughly 1-2 weeks)
 
-- **ماذا:** إخراج الأشكال والنصوص كـ SVG متجه حقيقي (قابل للتحجيم والاستخدام في الويب/المطبوعات).
-- **لماذا:** حاليًا التصدير PNG فقط (فحص الكود: صفر ذكر لـ SVG) — أي تصميم من الصفر محبوس بالبكسلات ولا يصلح كشعار أو مطبوعة.
-- **كيف:** مُولّد SVG يُسقط نموذج الطبقات (rect/ellipse/text/path) إلى عناصر SVG — لا حاجة لمكتبة. PDF لاحقًا عبر مكتبة أو طباعة المتصفح.
-- **الفرق عن Figma:** تصدير فقط بلا Dev Mode ولا Tokens.
+- **What:** output shapes and text as real vector SVG, scalable and usable on the web or in print.
+- **Why:** export is PNG-only today (code scan: zero references to SVG), so any design from scratch is trapped in pixels and unusable as a logo or print piece.
+- **How:** an SVG generator that lowers the layer model (rect/ellipse/text/path) into SVG elements — no library required. PDF can come later through a library or the browser's print path.
+- **Difference from Figma:** export only, with no Dev Mode and no tokens.
 
-#### 6) الأنماط والرموز — Styles + Symbols مبسطة (Effort: متوسط ~2 أسابيع)
+#### 6) Styles and symbols — simplified Styles + Symbols (Effort: medium, roughly 2 weeks)
 
-- **ماذا:** (أ) أنماط ألوان/نصوص مشتركة تُحدث كل مستخدميها. (ب) "رمز": مجموعة طبقات تُنسخ كنسخ مرتبطة بالأصل.
-- **لماذا:** بدونها أي تغيير (لون العلامة مثلًا) = تعديل يدوي لكل نسخة — وهذا بالضبط ما يجعل Figma إدمانًا.
-- **كيف:** `styles: {id, type, value}` + الطبقة تشير لـ `styleId` بدل قيمة خام + زر "تحديث الكل". الرموز: `symbols` + نسخ تحمل `symbolId` مع `overrides` محدودة (نص/لون فقط).
-- **الفرق عن Figma:** بلا Variants/Slots/Auto-Layout — نسخة "المبتدئين" التي تحل 80% من الألم بـ20% من التعقيد.
+- **What:** (a) shared color and text styles that update every user of them; (b) a "symbol": a group of layers duplicated as copies linked to the original.
+- **Why:** without them, any change (a brand color, say) means editing every copy by hand — and that is precisely what makes Figma addictive.
+- **How:** `styles: {id, type, value}` with layers referencing a `styleId` instead of a raw value, plus an "update all" action. For symbols: a `symbols` table plus instances carrying a `symbolId` with limited `overrides` (text and color only).
+- **Difference from Figma:** no Variants, Slots, or Auto Layout — the "beginner" version that solves 80% of the pain with 20% of the complexity.
 
-#### 7) حفظ المشاريع + Auto Layout مبسط (Effort: متوسط)
+#### 7) Project saving + simplified Auto Layout (Effort: medium)
 
-- **ماذا:** (أ) ملف مشروع `.lumen` (JSON: الطبقات + الإعدادات) مع حفظ/فتح — حاليًا لا يوجد حفظ إلا PNG مسطح! (ب) حاوية "صف/عمود" بتباعد وحشو تلقائي.
-- **لماذا:** (أ) بدون حفظ editable لا يوجد "مشروع" أصلًا — كل إغلاق = فقدان العمل. **هذه أولوية قصوى.** (ب) Auto Layout الكامل معقد؛ نسخة الصف/العمود تحل ترتيب البطاقات والقوائم.
-- **كيف:** (أ) تسلسل الحالة + file picker للحفظ/الفتح. (ب) `layout: {dir, gap, padding}` على المجموعات + إعادة حساب x/y عند التغيير.
+- **What:** (a) a `.lumen` project file (JSON: layers plus settings) with save and open — today the only output is a flattened PNG; (b) a "row/column" container with automatic gap and padding.
+- **Why:** (a) without editable saving there is no "project" at all, and every close means lost work — **this is top priority**; (b) full Auto Layout is complex, while a row/column version solves card and list ordering.
+- **How:** (a) serialize state plus a file picker for save/open; (b) a `layout: {dir, gap, padding}` on groups, recomputing x/y when it changes.
 
-### 2-4. خارطة الطريق المقترحة (مرتبة بالعائد/الجهد)
+### 2-4. Proposed roadmap (ordered by return on effort)
 
-| المرحلة | المحتوى | لماذا هنا؟ |
+| Phase | Contents | Why here? |
 |---|---|---|
-| **0 — سد الثقوب** (أسبوع) | حفظ/فتح `.lumen` + مساطر وشبكة وSnapping | بدونهما لا يوجد منتج أصلًا؛ والأخيرة أرخص احترافية |
-| **1 — التحرر من البدائيات** (3-4 أسابيع) | قلم Bezier + Boolean + تصدير SVG | هنا يصبح "التصميم من الصفر" حقيقيًا |
-| **2 — تعدد اللوحات** (أسبوعان) | Artboards + تصدير دفعي | تصميم حقيقي = نسخ ومقاسات |
-| **3 — الاتساق** (أسبوعان) | Styles + Symbols + صف/عمود | من أداة رسم إلى أداة تصميم |
+| **0 — Plug the holes** (one week) | `.lumen` save/open, rulers, grid, and snapping | Without the first there is no product at all, and the rest is the cheapest professionalism available |
+| **1 — Escape the primitives** (3-4 weeks) | Bezier pen, boolean operations, SVG export | This is where "designing from scratch" becomes real |
+| **2 — Multiple canvases** (two weeks) | Artboards plus batch export | Real design means multiple versions and sizes |
+| **3 — Consistency** (two weeks) | Styles, symbols, row/column layout | Turns a drawing tool into a design tool |
 
-**ما لا يدخل الخارطة عمدًا:** تعاون لحظي، فروع، نمذجة تفاعلية، تسليم مطورين، ذكاء توليدي — كلها فئة Figma لا فئتنا، وتكلفتها تفوق مشروع تخرج بعشرات المرات.
+**Deliberately out of scope:** real-time collaboration, branching, interactive prototyping, developer handoff, and generative AI. All of those belong to Figma's category rather than ours, and their cost exceeds a graduation project by orders of magnitude.
 
 ---
 
-## التوصية النهائية
+## Final recommendation
 
-1. **التموضع الصحيح:** Lumen = "Photopea صغير يعمل أوفلاين + لمسات Figma"، لا "Figma جديد". هذه ميزة تسويقية (الخصوصية + العمل بلا إنترنت + سطح مكتب) لا عيب.
-2. **قرارك المطلوب:** هل "التصميم من الصفر" هدف رسمي؟ إن نعم → ابدأ بالمرحلة 0 (حفظ المشاريع أولًا — غير قابلة للتفاوض)، ثم القلم.
-3. **قاعدة ذهبية للمقارنة مستقبلًا:** قبل طلب أي ميزة من Figma اسأل: "هل تخدم البكسلات أم الفرق؟" — الأولى لنا، الثانية ليست لنا.
+1. **Position it correctly:** Lumen is "a small offline Photopea with some Figma touches", not "the next Figma". That is a selling point — privacy, offline operation, a desktop app — not a defect.
+2. **The decision needed from you:** is "designing from scratch" an official goal? If so, start with phase 0 (project saving first, non-negotiable), then the pen.
+3. **A golden rule for future comparisons:** before requesting any Figma feature, ask "does this serve pixels or vector?" The first is ours; the second is not.
 
-### المصادر
-- Figma Config 2026 (Motion, Code Layers, Agent, Weave) — مدونة Figma ومركز المساعدة.
-- Figma VectorNetwork API docs — developers.figma.com.
-- مقارنات Figma/Photopea/Photoshop 2026 — Toolradar, Hedrick, Gitnux, ZipDo.
-- كود المشروع: `src/lib/layers.ts`، `src/lib/layerSystem.ts`، `src/lib/exportComposite.ts`، `src/components/Canvas.tsx` (فحص مباشر).
+### Sources
+- Figma Config 2026 (Motion, Code Layers, Agent, Weave) — the Figma blog and help center.
+- Figma VectorNetwork API documentation — developers.figma.com.
+- Figma/Photopea/Photoshop comparisons, 2026 — Toolradar, Hedrick, Gitnux, ZipDo.
+- Project source: `src/lib/layers.ts`, `src/lib/layerSystem.ts`, `src/lib/exportComposite.ts`, `src/components/Canvas.tsx` (direct inspection).

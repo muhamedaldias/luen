@@ -4,18 +4,18 @@ import { sanitizeLayerMask } from "./layers";
 import type { LayerRef } from "./layerSystem";
 import type { CanvasImage } from "./history";
 
-/* ملف مشروع Lumen (‎.lumen): JSON يحفظ الحالة القابلة للتحرير كاملة
- * (الصورة + كل الطبقات + الترتيب + المجموعات + مقاس المستند).
- * الضربات الحرة المدمجة تُحفظ ضمن الصورة؛ المعلقة تُتجاهل عمدًا. */
+/* Lumen project file (.lumen): JSON that stores the full editable state
+ * (the image + every layer + ordering + groups + document size).
+ * Committed freehand strokes are stored inside the image; pending ones are intentionally skipped. */
 
 export interface LumenProject {
   app: "lumen";
   version: 1;
   docSize: { w: number; h: number };
   image: CanvasImage | null;
-  /** الصورة الأساسية قبل أول خلفية — الخلفية الجديدة تستبدل القديمة تحتها. */
+  /** The base image before the first backdrop — a new backdrop replaces the old one beneath it. */
   baseBeforeBackdrop?: CanvasImage | null;
-  /** هل الصورة الحالية خلفية مجردة بلا أي محتوى فوقها؟ */
+  /** Is the current image a bare backdrop with no content on top? */
   pureBackdrop?: boolean;
   textLayers: TextLayer[];
   imageLayers: ImageLayer[];

@@ -137,7 +137,7 @@ export const themes: Theme[] = [
       "--danger": "#B03020",
     },
   },
-  /* الثيمات التالية مستخرجة بكسلياً من تدرجات بطاقات الأنماط (PresetPanel):
+  /* The following themes were sampled pixel-by-pixel from the preset card gradients (PresetPanel):
      Cinematic #3E2E23→#98603E · Warm #8F623B→#C69447 · Cold #343230→#84807A
      Noir #302E2C→#78746F · Faded #1E1C1B→#23211F · Vivid #C96D4E→#D3964B */
   {

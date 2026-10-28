@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { computeHistogram, histogramPath, type HistogramChannel, type Histogram } from "../lib/histogram";
 
 export type DialogKind =
   | "resize-canvas"
@@ -53,12 +54,14 @@ interface MenuDialogProps {
   kind: DialogKind;
   imageWidth: number;
   imageHeight: number;
+  /** URL of the current image — used to compute the real histogram. */
+  imageUrl?: string | null;
   busy?: boolean;
   onClose: () => void;
   onConfirm: (params: Record<string, number | string>) => void;
 }
 
-export default function MenuDialog({ kind, imageWidth, imageHeight, busy = false, onClose, onConfirm }: MenuDialogProps) {
+export default function MenuDialog({ kind, imageWidth, imageHeight, imageUrl, busy = false, onClose, onConfirm }: MenuDialogProps) {
   const W = imageWidth > 0 ? imageWidth : 800;
   const H = imageHeight > 0 ? imageHeight : 600;
   const [width, setWidth] = useState(W);
@@ -181,7 +184,7 @@ export default function MenuDialog({ kind, imageWidth, imageHeight, busy = false
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 340, maxWidth: "100%", borderRadius: 12, padding: 18,
+          width: kind === "levels" || kind === "curves" ? 420 : 340, maxWidth: "100%", borderRadius: 12, padding: 18,
           background: "var(--card)", border: "1px solid var(--border)",
           boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
         }}
@@ -248,6 +251,7 @@ export default function MenuDialog({ kind, imageWidth, imageHeight, busy = false
           {kind === "feather" && <SliderField label="Feather radius" value={feather} min={0} max={30} suffix="px" onChange={setFeather} />}
           {kind === "levels" && (
             <>
+              <HistogramView imageUrl={imageUrl} channel={channel as HistogramChannel} />
               <ChannelField value={channel} onChange={setChannel} />
               <SliderField label="Shadows (input black)" value={shadows} min={0} max={255} onChange={(v) => setShadows(Math.min(v, highlights - 1))} />
               <SliderField label="Midtones (gamma)" value={gamma} min={0.1} max={3} step={0.05} suffix="γ" onChange={setGamma} />
@@ -258,6 +262,7 @@ export default function MenuDialog({ kind, imageWidth, imageHeight, busy = false
           )}
           {kind === "curves" && (
             <>
+              <HistogramView imageUrl={imageUrl} channel={channel as HistogramChannel} />
               <ChannelField value={channel} onChange={setChannel} />
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {Object.keys(CURVE_PRESETS).map((name) => (
@@ -540,5 +545,115 @@ function CurveEditor({ points, onChange }: { points: CurvePoint[]; onChange: (pt
         );
       })}
     </svg>
+  );
+}
+
+/* ─── Histogram ──────────────────────────────────────────── */
+
+const HIST_W = 304;
+const HIST_H = 96;
+
+/**
+ * A real histogram for the current image — a feature that was entirely missing.
+ * The image is loaded through <img> with crossOrigin so its pixels can be read; on any failure (CORS/broken image)
+ * we do not break the dialog: we show an explicit message instead of a fake plot.
+ */
+function HistogramView({ imageUrl, channel }: { imageUrl?: string | null; channel: HistogramChannel }) {
+  const [hist, setHist] = useState<Histogram | null>(null);
+  const [state, setState] = useState<"loading" | "ok" | "unavailable">("loading");
+
+  useEffect(() => {
+    if (!imageUrl) {
+      setState("unavailable");
+      return;
+    }
+    let cancelled = false;
+    setState("loading");
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (cancelled) return;
+      try {
+        // Downsample huge images: a 256px longest edge is enough to reveal the distribution shape.
+        const longest = Math.max(img.naturalWidth, img.naturalHeight) || 1;
+        const scale = Math.min(1, 256 / longest);
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+          setState("unavailable");
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        setHist(computeHistogram(ctx.getImageData(0, 0, w, h).data));
+        setState("ok");
+      } catch {
+        // Tainted canvas (CORS) or not enough memory.
+        if (!cancelled) setState("unavailable");
+      }
+    };
+    img.onerror = () => {
+      if (!cancelled) setState("unavailable");
+    };
+    img.src = imageUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl]);
+
+  if (state === "unavailable") {
+    return (
+      <div
+        style={{
+          height: HIST_H, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
+          background: "var(--secondary)", border: "1px solid var(--border)",
+          fontSize: 11, color: "var(--muted-foreground)", textAlign: "center", padding: 8,
+        }}
+      >
+        Histogram unavailable for this image
+      </div>
+    );
+  }
+
+  const ready = state === "ok" && hist !== null;
+  const series: { bins: Uint32Array; stroke: string; fill: string }[] = !ready
+    ? []
+    : channel === "rgb"
+      ? [
+          { bins: hist.r, stroke: "rgba(230,90,80,0.95)", fill: "rgba(230,90,80,0.22)" },
+          { bins: hist.g, stroke: "rgba(110,190,110,0.95)", fill: "rgba(110,190,110,0.22)" },
+          { bins: hist.b, stroke: "rgba(95,150,235,0.95)", fill: "rgba(95,150,235,0.22)" },
+        ]
+      : [
+          {
+            bins: channel === "r" ? hist.r : channel === "g" ? hist.g : channel === "b" ? hist.b : hist.lum,
+            stroke: channel === "lum" ? "rgba(220,220,220,0.95)" : "var(--accent)",
+            fill: "rgba(220,220,220,0.20)",
+          },
+        ];
+  const max = hist ? hist.max : 1;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <svg
+        width="100%"
+        height={HIST_H}
+        viewBox={`0 0 ${HIST_W} ${HIST_H}`}
+        preserveAspectRatio="none"
+        data-testid="histogram"
+        style={{ display: "block", borderRadius: 6, background: "var(--secondary)", border: "1px solid var(--border)" }}
+      >
+        {ready &&
+          series.map((s, i) => (
+            <path key={i} d={histogramPath(s.bins, max, HIST_W, HIST_H)} fill={s.fill} stroke={s.stroke} strokeWidth={1} />
+          ))}
+      </svg>
+      <p style={{ margin: 0, fontSize: 10, color: "var(--muted-foreground)" }}>
+        {state === "loading" ? "Computing histogram..." : `Live histogram — ${channel.toUpperCase()} · ${hist?.total ?? 0} px sampled`}
+      </p>
+    </div>
   );
 }

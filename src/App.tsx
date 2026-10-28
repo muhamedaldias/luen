@@ -86,8 +86,8 @@ async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-/** تكبير قناع المحرر (دقة العرض) إلى دقة الصورة الكاملة قبل Inpaint —
- *  يمنع التشوه والحواف الخشنة الناتجة عن قناع منخفض الدقة. */
+/** Upscale the editor mask (viewport resolution) to full image resolution before inpainting —
+ *  prevents the smearing and rough edges produced by a low-resolution mask. */
 async function upscaleMaskToImage(maskUrl: string, imageUrl: string): Promise<string> {
   const [maskImg, baseImg] = await Promise.all([
     new Promise<HTMLImageElement>((resolve, reject) => {
@@ -126,7 +126,16 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [agentCollapsed, setAgentCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [currentTheme, setCurrentTheme] = useState("ember");
+  const [currentTheme, setCurrentTheme] = useState(() => {
+    // The theme is persisted locally so it survives reloads (with validation of the id).
+    try {
+      const saved = localStorage.getItem("lumen.theme");
+      if (saved && themes.some((t) => t.id === saved)) return saved;
+    } catch {
+      /* Local storage may be disabled — fall back to the default */
+    }
+    return "ember";
+  });
   const [textLayers, setTextLayers] = useState<TextLayer[]>([]);
   const [imageLayers, setImageLayers] = useState<ImageLayer[]>([]);
   const [shapeLayers, setShapeLayers] = useState<ShapeLayer[]>([]);
@@ -156,7 +165,7 @@ export default function App() {
       const raw = localStorage.getItem("lumen_export_prefs");
       if (raw) return { format: "png", quality: 92, bg: "#FFFFFF", ...(JSON.parse(raw) as Partial<ExportOptions>) };
     } catch {
-      /* الافتراضيات */
+      /* Defaults */
     }
     return { format: "png", quality: 92, bg: "#FFFFFF" };
   });
@@ -179,7 +188,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<number | null>(null);
 
-  // ── Undo/Redo: لقطات Memento بحد تكيّفي حسب حجم الصورة (انظر lib/history.ts) ──
+  // ── Undo/Redo: Memento snapshots with an adaptive cap based on image size (see lib/history.ts) ──
   const [history, setHistory] = useState<HistoryEntry[]>([emptyEntry("Open")]);
   const [historyIdx, setHistoryIdx] = useState(0);
   const historyRef = useRef<HistoryEntry[]>([emptyEntry("Open")]);
@@ -202,9 +211,9 @@ export default function App() {
   const eraserSizeRef = useRef(36);
   const strokeLayersRef = useRef<StrokeLayer[]>([]);
   const strokeEditTimer = useRef<number | null>(null);
-  /** الصورة الأساسية قبل أول خلفية من المكتبة — كل خلفية جديدة تُدمج فوقها مباشرة (استبدال). */
+  /** The base image before the first library backdrop — every new backdrop is composited directly over it (replacement). */
   const baseBeforeBackdropRef = useRef<CanvasImage | null>(null);
-  /** هل الصورة الحالية خلفية مجردة فقط؟ صحيح يمنع التقاطها كأساس — الجديدة تستبدلها كلياً. */
+  /** Is the current image a bare backdrop? True blocks capturing it as a base — a new backdrop replaces it entirely. */
   const pureBackdropRef = useRef(false);
   const quickToleranceRef = useRef(32);
   const activeToolRef = useRef<ToolId>("select");
@@ -269,7 +278,7 @@ export default function App() {
     groupsRef.current = groupNames;
   }, [groupNames]);
 
-  // مزامنة الترتيب الموحد تلقائياً: يحافظ على ترتيب المستخدم ويضيف الجديد في الأعلى والخلفية في الأسفل
+  // Keep the unified order in sync automatically: preserves the user's order, appends new layers on top, and keeps the backdrop at the bottom
   useEffect(() => {
     setLayerOrder((prev) =>
       syncOrder(prev, {
@@ -286,13 +295,18 @@ export default function App() {
   useEffect(() => {
     const theme = themes.find((t) => t.id === currentTheme);
     if (theme) applyTheme(theme);
+    try {
+      localStorage.setItem("lumen.theme", currentTheme);
+    } catch {
+      /* Best effort — a storage failure must not disable the app */
+    }
   }, [currentTheme]);
 
-  // ── الحفظ التلقائي والحفظ بـ Ctrl+S ──
+  // ── Autosave and Ctrl+S save ──
   const [autosaveDirty, setAutosaveDirty] = useState(false);
   const [autosaveRestore, setAutosaveRestore] = useState<{ savedAt: number; json: string } | null>(null);
 
-  // تخطيط اللوحات المحفوظ (حجم اللوحة اليمنى) — يُقرأ مرة واحدة عند الإقلاع.
+  // Persisted panel layout (right panel width) — read once at startup.
   const [panelLayout] = useState<Record<string, number> | undefined>(() => {
     try {
       const raw = localStorage.getItem("lumen_panel_layout_v1");
@@ -332,22 +346,24 @@ export default function App() {
     try {
       downloadProject(buildProjectDoc());
       setAutosaveDirty(false);
+      // After a successful project save there is no reason to keep a stale autosave draft.
+      void clearAutosave();
     } catch {
       setLoadError("Could not save project file");
     }
   }, [buildProjectDoc]);
 
-  // حفظ تلقائي في IndexedDB — أفضل جهد، لا يُعطّل التطبيق عند الفشل.
+  // Autosave to IndexedDB — best effort, never disables the app on failure.
   const writeAutosave = useCallback(async () => {
     try {
       await saveAutosave(serializeProject(buildProjectDoc()));
       setAutosaveDirty(false);
     } catch {
-      /* أفضل جهد */
+      /* Best effort */
     }
   }, [buildProjectDoc]);
 
-  // كل تعديل (دخول التاريخ أو تغيّر الطبقات) يجدولة حفظاً مؤجلاً.
+  // Every edit (a history entry or a layer change) schedules a debounced save.
   useEffect(() => {
     const hasDoc = imageRef.current !== null || layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
     if (!hasDoc) return;
@@ -366,7 +382,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyIdx, history.length, textLayers, imageLayers, shapeLayers, solidLayers, layerOrder, groupNames, docSize, canvasImage, writeAutosave]);
 
-  // عند إخفاء التبويب: اكتب الحفظ فوراً بدل انتظار المؤجل.
+  // When the tab is hidden: flush the save immediately instead of waiting for the debounce.
   useEffect(() => {
     const onHide = () => {
       if (document.visibilityState !== "hidden" || !autosaveDirtyRef.current) return;
@@ -380,7 +396,7 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onHide);
   }, [writeAutosave]);
 
-  // عند الإقلاع: اعرض نافذة استعادة إن وُجدت نسخة تلقائية.
+  // At startup: offer recovery when an autosaved copy exists.
   useEffect(() => {
     if (autosaveChecked.current) return;
     autosaveChecked.current = true;
@@ -389,7 +405,7 @@ export default function App() {
         const rec = await loadAutosave();
         if (rec && rec.json) setAutosaveRestore({ savedAt: rec.savedAt, json: rec.json });
       } catch {
-        /* لا نسخة تلقائية */
+        /* No autosaved copy */
       }
     })();
   }, []);
@@ -420,16 +436,16 @@ export default function App() {
     try {
       await stageRef.current?.setStrokes(entry.strokes ?? []);
     } catch {
-      /* الاستعادة الجزئية مقبولة */
+      /* A partial restore is acceptable */
     }
   }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      // المطابقة عبر e.code تجعل الاختصارات تعمل على أي تخطيط لوحة مفاتيح (عربي/لاتيني).
+      // Matching on e.code keeps shortcuts working on any keyboard layout (Arabic/Latin).
       const k = e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
       const mod = e.ctrlKey || e.metaKey;
-      // تجاهل التحرير النصي فقط — المنزلقات ومنتقيات الألوان ليست تحريراً نصياً.
+      // Ignore only text editing — sliders and color pickers are not text editing.
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName ?? "";
       const nonTextInput = new Set(["range", "color", "checkbox", "radio", "file", "button", "submit", "reset", "image", "hidden"]);
@@ -492,15 +508,26 @@ export default function App() {
         setExportOpen(true);
         return;
       }
-      if (k === "[" || (e.code === "BracketLeft" && !mod)) { setEraserSize((v) => Math.max(2, v - 4)); return; }
-      if (k === "]" || (e.code === "BracketRight" && !mod)) { setEraserSize((v) => Math.min(200, v + 4)); return; }
+      if (!mod && (k === "[" || e.code === "BracketLeft")) {
+        if (activeToolRef.current === "brush") setBrushSize((v) => Math.max(2, v - 4));
+        else setEraserSize((v) => Math.max(2, v - 4));
+        return;
+      }
+      if (!mod && (k === "]" || e.code === "BracketRight")) {
+        if (activeToolRef.current === "brush") setBrushSize((v) => Math.min(200, v + 4));
+        else setEraserSize((v) => Math.min(200, v + 4));
+        return;
+      }
       if (mod) return;
       if (k === "v") setActiveTool("select");
+      else if (k === "c") setActiveTool("crop");
       else if (k === "w") setActiveTool("smart-select");
       else if (k === "q") setActiveTool("quick-select");
+      else if (k === "k") setActiveTool("magic-wand");
       else if (k === "t") setActiveTool("text");
       else if (k === "b") setActiveTool("brush");
       else if (k === "e") setActiveTool("eraser");
+      else if (k === "i") setActiveTool("eyedropper");
       else if (k === "h") setActiveTool("pan");
       else if (k === "z") setActiveTool("zoom");
       else if (k === "u") {
@@ -521,7 +548,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [restoreIdx, handleSaveProject]);
 
-  // دمج ضربات fabric المعلقة في الصورة قبل أي عملية raster (فلاتر/إزالة/تصدير).
+  // Commit pending fabric strokes into the image before any raster operation (filters/removal/export).
   const bakeFlush = useCallback(async (): Promise<CanvasImage | null> => {
     try {
       const url = await stageRef.current?.flushStrokes();
@@ -531,19 +558,19 @@ export default function App() {
         imageRef.current = next;
       }
       if (url) {
-        // الضربات الحيّة دُمجت في الصورة — أفرغ حالتها هنا.
+        // The live strokes are now committed into the image — clear their state here.
         strokeLayersRef.current = [];
         setStrokeLayers([]);
-        // ضربات فوق خلفية مجردة تبقى جزءاً منها (تُستبدل معها)؛ فوق أساس حقيقي تصبح محتوى محفوظاً.
+        // Strokes over a bare backdrop stay part of it (replaced along with it); over a real base they become saved content.
         if (baseBeforeBackdropRef.current) pureBackdropRef.current = false;
       }
     } catch {
-      /* لا ضربات أو فشل الدمج — نكمل */
+      /* No strokes, or the commit failed — carry on */
     }
     return imageRef.current;
   }, []);
 
-  /** انتهت الضربات الحيّة (دُمجت قبل عملية بكسل) — نظّف الحالة والتحديد. */
+  /** The live strokes are done (committed before a pixel operation) — clear the state and the selection. */
   const handleStrokesBaked = useCallback(() => {
     strokeLayersRef.current = [];
     setStrokeLayers([]);
@@ -606,7 +633,7 @@ export default function App() {
     []
   );
 
-  /** ضربة فرشاة جديدة: كائن حيّ قابل للتحديد — تُدمج لاحقاً عند الحاجة (فلتر/ممحاة/تصدير). */
+  /** New brush stroke: a live, selectable object — committed later when needed (filter/eraser/export). */
   const handleStrokeAdded = useCallback(
     (s: { id: string; name: string; width: number; color: string; opacity: number }) => {
       const layer = createStrokeLayer(s);
@@ -618,7 +645,7 @@ export default function App() {
     [pushHistory]
   );
 
-  /** تعديل مباشر لضربة محددة من لوحة الخصائص — معاينة حية، ولقطة تاريخ واحدة بعد التوقف. */
+  /** Direct edit of the selected stroke from the properties panel — live preview, one history snapshot after the edit settles. */
   const handleUpdateStroke = useCallback((id: string, patch: Partial<StrokeLayer>) => {
     const next = strokeLayersRef.current.map((l) => (l.id === id ? { ...l, ...patch } : l));
     strokeLayersRef.current = next;
@@ -630,7 +657,7 @@ export default function App() {
     }, 350);
   }, [pushHistory]);
 
-  /** فحص خفيف: هل الصورة معتمة بالكامل (لا شفافية)؟ عيّنة مصغرة تكفي للقرار. */
+  /** Cheap check: is the image fully opaque (no transparency)? A small sample is enough to decide. */
   const isOpaqueImage = useCallback(async (url: string): Promise<boolean> => {
     try {
       const img = new Image();
@@ -650,29 +677,29 @@ export default function App() {
       const d = ctx.getImageData(0, 0, w, h).data;
       let transparent = 0;
       for (let i = 3; i < d.length; i += 4) if (d[i] < 250) transparent++;
-      // قصاصة حقيقية شفافيتها >> 5% — ما دون ذلك يعتم بصرياً ولن تظهر الخلفية تحته.
+      // A real cut-out has transparency well above 5% — below that it reads as opaque and no backdrop would show through.
       return transparent / (w * h) < 0.05;
     } catch {
       return true;
     }
   }, []);
 
-  /** إضافة أصل من المكتبة: الخلفية تُدمج تحت الصورة في صورة الأساس (قابلة للتراجع)،
-   *  والمنتجات تُضاف كطبقة فوق الكل — عند الإفلات تتمركز في نقطة الإفلات. */
+  /** Add an asset from the library: backdrops are composited under the image into the base image (undoable),
+   *  while products are added as a topmost layer — when dropped, they center on the drop point. */
   const handleAddAsset = useCallback(
     (asset: AssetDef, at?: { nx: number; ny: number }) => {
       const url = assetDataUrl(asset);
       if (asset.kind === "background") {
         void (async () => {
           await bakeFlush();
-          // الأساس = الصورة قبل أول خلفية. أول إضافة تحفظه، وما بعدها يستبدل الخلفية فوقه
-          // (الخلفية مفردة بالتعريف — الجديدة تحل محل القديمة تحت الصورة الأصلية).
+          // The base = the image before the first backdrop. The first add captures it; later ones replace the backdrop above it
+          // (A backdrop is singular by definition — the new one takes the old one's place under the original image).
           const cur = imageRef.current;
-          // التقاط الأساس فقط لصورة حقيقية سابقة للخلفية — الخلفية المجردة نفسها ليست أساساً.
+          // Capture the base only for a real image that predates any backdrop — a bare backdrop is not itself a base.
           if (cur && !baseBeforeBackdropRef.current && !pureBackdropRef.current) baseBeforeBackdropRef.current = cur;
           let base = baseBeforeBackdropRef.current;
-          // صورة معتمة من الجهاز تغطي المركّب كلياً فتُخفي الخلفية (تُسجَّل في التاريخ بلا أثر مرئي).
-          // القصّ التلقائي (نمط Photoroom): أزل خلفية الصورة أولاً ليظهر المنتج فوق المشهد.
+          // An opaque image from the device covers the composite entirely and hides the backdrop (recorded in history with no visible effect).
+          // Auto cut-out (Photoroom style): remove the image background first so the product shows over the scene.
           if (base && cur && (await isOpaqueImage(base.url))) {
             const cutUrl = await handleApply("remove_background", {});
             if (cutUrl) {
@@ -711,7 +738,7 @@ export default function App() {
           const merged = { url: c.toDataURL("image/png"), imageId: null, width: docW, height: docH };
           setCanvasImage(merged);
           imageRef.current = merged;
-          // لا أساس مركّب فوق الخلفية ⇒ النتيجة خلفية مجردة (الجديدة القادمة تستبدلها).
+          // No base composited above the backdrop ⇒ the result is a bare backdrop (the next one replaces it).
           pureBackdropRef.current = base == null;
           pushHistory("Add background", { image: merged, baseBeforeBackdrop: baseBeforeBackdropRef.current });
         })().catch(() => showNotice("Could not add background"));
@@ -729,7 +756,7 @@ export default function App() {
     [pushHistory, isOpaqueImage]
   );
 
-  /** إفلات أصل على الكانفس في نقطة محددة. */
+  /** Drop an asset onto the canvas at a specific point. */
   const handleDropAsset = useCallback(
     (assetId: string, at: { nx: number; ny: number }) => {
       const asset = ASSET_LIST.find((a) => a.id === assetId);
@@ -738,7 +765,7 @@ export default function App() {
     [handleAddAsset]
   );
 
-  /* ── نظام الطبقات الموحد: ترتيب + دمج + مجموعات + محاذاة ── */
+  /* ── Unified layer system: order + merge + groups + alignment ── */
   const kindOfId = useCallback((id: string): string | null => {
     if (id === BG_ID) return "background";
     if (layersRef.current.some((l) => l.id === id)) return "text";
@@ -994,7 +1021,7 @@ export default function App() {
     [pushHistory]
   );
 
-  /* ── طبقات عامة: صورة / شكل / تعبئة ── */
+  /* ── Generic layers: image / shape / fill ── */
   const handleNewLayerPick = useCallback(
     (choice: NewLayerChoice) => {
       setNewLayerOpen(false);
@@ -1154,7 +1181,7 @@ export default function App() {
     }
 
     if (dataUrl) {
-      // الأبعاد الحقيقية من الملف نفسه — تعمل حتى بلا باكند.
+      // Real dimensions from the file itself — works even without a backend.
       let natural = { width: 0, height: 0 };
       try {
         natural = await getNaturalSize(dataUrl);
@@ -1198,7 +1225,7 @@ export default function App() {
       setLoadError("Open an image first");
       return null;
     }
-    // بلا imageId (الباكند غير متصل): معالجة محلية داخل المتصفح — تعمل دائماً.
+    // Without an imageId (backend offline): local in-browser processing — always available.
     if (!current.imageId) {
       setBusy("Processing…");
       setLoadError(null);
@@ -1219,8 +1246,8 @@ export default function App() {
     setLoadError(null);
     try {
       const resultUrl = await runAndWait(opName, current.imageId, params);
-      // تحويل نتيجة السيرفر إلى dataURL نظيفة فوراً: الكانفس يبقى origin-clean
-      // فلا يظهر خطأ tainted canvas أبداً عند الحفظ/التصدير لاحقاً.
+      // Convert the server result to a clean dataURL immediately: the canvas stays origin-clean
+      // so a tainted-canvas error never shows up later at save/export time.
       const cleanUrl = await toCleanDataUrlBestEffort(resolveUrl(resultUrl));
       const next = { ...current, url: cleanUrl };
       try {
@@ -1230,7 +1257,7 @@ export default function App() {
           next.height = nat.height;
         }
       } catch {
-        /* أبعاد قديمة مقبولة */
+        /* Stale dimensions are acceptable */
       }
       setCanvasImage(next);
       pushHistory(opName, { image: next });
@@ -1265,7 +1292,7 @@ export default function App() {
     await bakeFlush();
     const current = imageRef.current;
     const hasAny = current || layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
-    // هل ستُدمج طبقات مستخدم في الصورة؟ إن وجدت فلن تبقى خلفية مجردة.
+    // Will any user layers be merged into the image? If so, it is no longer a bare backdrop.
     const hadLayers = layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
     if (!hasAny) {
       setLoadError("Nothing to flatten — open an image first");
@@ -1315,7 +1342,7 @@ export default function App() {
     await bakeFlush();
     const layers = layersRef.current;
     const target = layers.find((l) => l.id === selectedTextIdRef.current) ?? layers[layers.length - 1];
-    // دمج طبقة عامة (صورة/شكل) إن كانت هي المحددة بدل النص
+    // Merge a generic layer (image/shape) when that is what is selected instead of text
     const selGen = selectedLayer;
     const current = imageRef.current;
     setBusy("Merging down…");
@@ -1331,7 +1358,7 @@ export default function App() {
           solidLayers: selGen.kind === "solid" ? solidLayersRef.current.filter((l) => l.id === selGen.id) : [],
         });
         const next: CanvasImage | null = current ? { ...current, url: dataUrl } : null;
-        // دمج طبقة في الصورة — لم تبقَ خلفية مجردة. قبل pushHistory ليلتقط اللقطة القيمة الصحيحة.
+        // Merge a layer into the image — it is no longer a bare backdrop. Do this before pushHistory so the snapshot captures the right value.
         pureBackdropRef.current = false;
         if (selGen.kind === "image") {
           const rest = imageLayersRef.current.filter((l) => l.id !== selGen.id);
@@ -1807,6 +1834,9 @@ export default function App() {
         break;
       // — Layer —
       case "New Layer":
+      // TopBar uses the real U+2026 ellipsis character (…) rather than three ASCII dots — accept both.
+      case "New Layer\u2026":
+      case "New Layer...":
       case "New Text Layer":
         setNewLayerOpen(true);
         break;
@@ -2071,7 +2101,7 @@ export default function App() {
       let w = current.width;
       let h = current.height;
       if (current.imageId) {
-        // توسيع القناع لدقة الصورة الكاملة قبل الإرسال (بدل دقة العرض) + خوارزمية محسّنة.
+        // Upscale the mask to full image resolution before sending (instead of viewport resolution) + an improved algorithm.
         const fullMask = await upscaleMaskToImage(maskDataUrl, current.url).catch(() => maskDataUrl);
         const raw = await runAndWait("remove_object", current.imageId, { mask: fullMask, method: "ns", dilate: 5, radius: 7, feather: 2 });
         resultUrl = await toCleanDataUrlBestEffort(resolveUrl(raw));
@@ -2082,7 +2112,7 @@ export default function App() {
             h = nat.height;
           }
         } catch {
-          /* تجاهل */
+          /* ignore */
         }
       } else {
         const fullMask = await upscaleMaskToImage(maskDataUrl, current.url).catch(() => maskDataUrl);
@@ -2129,7 +2159,7 @@ export default function App() {
         const raw = await runAndWait("blend", current.imageId, params);
         cleanUrl = await toCleanDataUrlBestEffort(resolveUrl(raw));
       } else {
-        const r = await applyLocalOp(current.url, "blend", { foreground: p.foregroundUrl, mode: p.mode, scale: p.scale, x: p.x, y: p.y, feather: p.feather });
+        const r = await applyLocalOp(current.url, "blend", { foreground: p.foregroundUrl, mode: p.mode, scale: p.scale, x: p.x, y: p.y, feather: p.feather, colorMatch: p.colorMatch ? 1 : 0 });
         cleanUrl = r.url;
         w = r.width;
         h = r.height;
@@ -2141,11 +2171,11 @@ export default function App() {
           h = nat.height;
         }
       } catch {
-        /* تجاهل */
+        /* ignore */
       }
       const next = { ...current, url: cleanUrl, width: w, height: h };
       setCanvasImage(next);
-      // الدمج يضيف محتوى فوق الصورة — لم تعد خلفية مجردة.
+      // The merge adds content above the image — it is no longer a bare backdrop.
       pureBackdropRef.current = false;
       pushHistory(`Blend (${p.mode})`, { image: next });
     } catch (e) {
@@ -2155,46 +2185,14 @@ export default function App() {
     }
   }
 
-  async function downloadCurrentImage(filename: string) {
-    await bakeFlush();
-    const hasAny = imageRef.current || layersRef.current.length > 0 || imageLayersRef.current.length > 0 || shapeLayersRef.current.length > 0 || solidLayersRef.current.length > 0;
-    if (!hasAny) {
-      setLoadError("No image to save — open an image first");
-      return;
-    }
-    setBusy("Exporting…");
-    try {
-      const fresh = imageRef.current;
-      const dataUrl = await exportFlattenedDataUrl({
-        imageUrl: fresh?.url ?? null,
-        width: fresh?.width ?? docSizeRef.current.w,
-        height: fresh?.height ?? docSizeRef.current.h,
-        textLayers: layersRef.current,
-        imageLayers: imageLayersRef.current,
-        shapeLayers: shapeLayersRef.current,
-        solidLayers: solidLayersRef.current,
-        order: orderRef.current,
-      });
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      // التصدير ليس تعديلاً على اللوحة — لا يدخل سجل Undo.
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Export failed";
-      setLoadError(msg);
-    } finally {
-      setBusy(null);
-    }
-  }
-
+  // The "Save" button in the top bar must save the project (.lumen), not a PNG image:
+  // it is labeled ⌘S, and the save-status indicator beside it tracks the autosaved project.
+  // (It used to download a PNG while ⌘S saved the project — two different behaviors under one name.)
   function handleSave() {
-    void downloadCurrentImage("lumen-image.png");
+    handleSaveProject();
   }
 
-  // تطبيق مشروع كامل على الحالة — مشترك بين "فتح مشروع" واستعادة الحفظ التلقائي.
+  // Apply a full project onto the state — shared by "Open project" and autosave recovery.
   async function applyProject(p: LumenProject, label: string) {
     setCanvasImage(p.image ? { ...p.image } : null);
     setBlankMode(!p.image);
@@ -2211,7 +2209,7 @@ export default function App() {
     setRightTab("layers");
     setZoom(100);
     await stageRef.current?.setStrokes([]).catch(() => undefined);
-    // بعد الـawait مباشرة وقبل الدفع — أقصى قرب بين الضبط والالتقاط.
+    // Right after the await and before the push — the tightest possible gap between setting and capturing.
     baseBeforeBackdropRef.current = p.baseBeforeBackdrop ?? null;
     pureBackdropRef.current = p.pureBackdrop === true;
     pushHistory(label, {
@@ -2252,7 +2250,7 @@ export default function App() {
     setExportOpen(true);
   }
 
-  /** تصدير فعلي بصيغة مختارة: دمج كل الطبقات ثم ترميز PNG/JPG/WEBP بجودة محددة. */
+  /** Actual export in the chosen format: merge all layers, then encode PNG/JPG/WEBP at the given quality. */
   async function runExport(opts: ExportOptions) {
     setExportOpen(false);
     await bakeFlush();
@@ -2360,7 +2358,7 @@ export default function App() {
     setNewCanvasOpen(false);
     setBlankMode(true);
     setCanvasImage(null);
-    // كانفس جديد: أساس خلفية قديم يجب ألا يتسرب إليه.
+    // New canvas: a stale backdrop base must not leak into it.
     baseBeforeBackdropRef.current = null;
     pureBackdropRef.current = false;
     setTextLayers([]);
@@ -2391,7 +2389,7 @@ export default function App() {
         const sized = { ...next, width: img.naturalWidth, height: img.naturalHeight };
         setCanvasImage(sized);
         imageRef.current = sized;
-        // حدّث لقطة الـhistory بالأبعاد الصحيحة بدل لقطة بأبعاد قديمة
+        // Update the history snapshot with the correct dimensions instead of a snapshot carrying stale ones
         const h = historyRef.current;
         const last = h[h.length - 1];
         if (last && last.label === "Edit") {
@@ -2544,11 +2542,11 @@ export default function App() {
           className="flex-1 min-w-0 min-h-0"
           defaultLayout={panelLayout}
           onLayoutChanged={(layout) => {
-            // تذكّر حجم اللوحة اليمنى بين الجلسات — النمط الرسمي للمكتبة.
+            // Remember the right panel width across sessions — the library's documented pattern.
             try {
               localStorage.setItem("lumen_panel_layout_v1", JSON.stringify(layout));
             } catch {
-              /* أفضل جهد */
+              /* Best effort */
             }
           }}
         >
@@ -2580,6 +2578,10 @@ export default function App() {
               onDeleteText={handleDeleteText}
               onCommitHistory={pushHistory}
               onSmartSelect={(fx, fy) => void handleRemoveBackground(fx, fy)}
+              onPickColor={(hex) => {
+                setBrushColor(hex);
+                showNotice("Brush color set to " + hex);
+              }}
               selectionMask={selectionMask}
               selectionInverted={selectionInverted}
               onMagicWandSelect={(px, py, add, subtract) => void handleMagicWandPick(px, py, add, subtract)}
@@ -2773,7 +2775,7 @@ export default function App() {
           try {
             localStorage.setItem("lumen_export_prefs", JSON.stringify(opts));
           } catch {
-            /* التخزين اختياري */
+            /* Storage is optional */
           }
           void runExport(opts);
         }}
@@ -2790,6 +2792,7 @@ export default function App() {
           kind={menuDialog}
           imageWidth={imageRef.current.width}
           imageHeight={imageRef.current.height}
+          imageUrl={imageRef.current.url}
           busy={busy !== null}
           onClose={() => setMenuDialog(null)}
           onConfirm={handleDialogConfirm}
@@ -2839,7 +2842,7 @@ export default function App() {
       {autosaveRestore && (
         <div
           onClick={() => {
-            void clearAutosave();
+            // Close the dialog only — do not discard the draft on a backdrop click (to avoid losing work).
             setAutosaveRestore(null);
           }}
           style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}

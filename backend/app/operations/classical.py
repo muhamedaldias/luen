@@ -100,7 +100,7 @@ def _parse_hex_color(value: object, default: tuple = (28, 27, 26)) -> tuple:
 
 
 def resize_canvas(image_id: str, user_id: str, params: dict) -> str:
-    """تغيير أبعاد اللوحة دون تحجيم المحتوى: لصق + اقتصاص حسب anchor."""
+    """Resize the canvas without scaling the content: paste + crop according to anchor."""
     from ..config import get_settings
 
     img = _load(image_id, user_id).convert("RGBA")
@@ -119,7 +119,7 @@ def resize_canvas(image_id: str, user_id: str, params: dict) -> str:
 
     ox = int(round((target_w - sw) * ax))
     oy = int(round((target_h - sh) * ay))
-    # منطقة التداخل (تقتص الزائد تلقائياً)
+    # Overlap region (automatically crops any overflow)
     sx0, sy0 = max(0, -ox), max(0, -oy)
     dx0, dy0 = max(0, ox), max(0, oy)
     w = min(sw - sx0, target_w - dx0)
@@ -167,6 +167,17 @@ def adjust(image_id: str, user_id: str, params: dict) -> str:
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
     l_channel = lab[:, :, 0]
 
+    # Exposure: linear gain in EV stops, identical to the local path in
+    # src/lib/localOps.ts (-100 -> 2^-2 = 0.25x, +100 -> 2^+2 = 4x). The UI has
+    # always sent this parameter; the backend used to drop it silently, so the
+    # slider behaved differently depending on whether the server was connected.
+    exposure = _float_params(params, "exposure", 0)
+    if exposure:
+        gain = float(2.0 ** (max(-100.0, min(100.0, exposure)) / 50.0))
+        rgb = np.clip(rgb * gain, 0, 255)
+        lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
+        l_channel = lab[:, :, 0]
+
     if brightness:
         l_channel = np.clip(l_channel + brightness, 0, 255)
     if contrast:
@@ -180,6 +191,15 @@ def adjust(image_id: str, user_id: str, params: dict) -> str:
         if highlights:
             bright = np.clip((lum - 0.5) * 2.0, 0, 1) ** 1.5
             l_channel = np.clip(l_channel + highlights * 0.6 * bright, 0, 255)
+
+    # Whites/Blacks: white-point / black-point curve, same formula as the local
+    # LUT in src/lib/localOps.ts. Positive values lift the tone (Lightroom
+    # convention): Blacks pushes the shadows up, Whites pushes the highlights up.
+    whites = _float_params(params, "whites", 0)
+    blacks = _float_params(params, "blacks", 0)
+    if whites or blacks:
+        l_channel = _whites_blacks_curve(l_channel, whites, blacks)
+
     lab[:, :, 0] = l_channel
     rgb_out = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
     result = Image.fromarray(np.clip(rgb_out, 0, 255).astype(np.uint8))
@@ -199,6 +219,23 @@ def adjust(image_id: str, user_id: str, params: dict) -> str:
     if alpha is not None:
         result.putalpha(alpha)
     return save_result(result, user_id, image_id, "adjust")
+
+
+def _whites_blacks_curve(l_channel: np.ndarray, whites: float, blacks: float) -> np.ndarray:
+    """Apply the white-point / black-point tone curve to an L channel (0-255).
+
+    Mirrors the 256-entry LUT used by the browser path, but evaluated on floats
+    so no 8-bit quantisation is introduced before the LAB round-trip. Both
+    offsets are computed from the *original* tone, so the two controls stay
+    independent instead of compounding.
+    """
+    tone = np.clip(l_channel / 255.0, 0.0, 1.0)
+    out = tone
+    if blacks:
+        out = out + (blacks / 100.0) * 0.35 * np.power(1.0 - tone, 2.2)
+    if whites:
+        out = out + (whites / 100.0) * 0.35 * np.power(tone, 2.2)
+    return np.clip(out, 0.0, 1.0) * 255.0
 
 
 def clahe(image_id: str, user_id: str, params: dict) -> str:

@@ -309,7 +309,7 @@ export default function RightPanel({
 
       <div className="shrink-0 px-3 py-2.5 w-full" style={{ borderTop: "1px solid var(--border)", minWidth: 0 }}>
         {(() => {
-          // الهندسة (X/Y/W/°) تُعرض في تبويب Design — التذييل يبقى للحالات الفريدة فقط.
+          // Geometry (X/Y/W/°) lives in the Design tab — the footer is reserved for edge cases only.
           if (selSolid) {
             return (
               <div className="flex items-center justify-between" style={{ minWidth: 0 }}>
@@ -1515,6 +1515,9 @@ interface Adjustment {
 const adjustments: Adjustment[] = [
   { key: "brightness", label: "Brightness", value: 0, min: -100, max: 100, default: 0 },
   { key: "contrast", label: "Contrast", value: 0, min: -100, max: 100, default: 0 },
+  { key: "exposure", label: "Exposure", value: 0, min: -100, max: 100, default: 0 },
+  { key: "whites", label: "Whites", value: 0, min: -100, max: 100, default: 0 },
+  { key: "blacks", label: "Blacks", value: 0, min: -100, max: 100, default: 0 },
   { key: "saturation", label: "Saturation", value: 0, min: -100, max: 100, default: 0 },
   { key: "sharpness", label: "Sharpness", value: 0, min: 0, max: 100, default: 0 },
   { key: "blur", label: "Blur", value: 0, min: 0, max: 40, default: 0 },
@@ -1552,6 +1555,9 @@ function AdjustmentsTab({
     const params = {
       brightness: values.brightness,
       contrast: values.contrast,
+      exposure: values.exposure,
+      whites: values.whites,
+      blacks: values.blacks,
       saturation: values.saturation,
       sharpness: values.sharpness,
       blur: values.blur,
@@ -1899,7 +1905,7 @@ function HistoryTab({ stack, idx, onJump }: { stack: string[]; idx: number; onJu
   return (
     <div className="py-1 w-full" style={{ minWidth: 0 }}>
       <p className="px-3 py-1 text-xs" style={{ color: "var(--muted-foreground)", fontSize: 10 }}>
-        Click any step to jump (real undo — up to 30 steps)
+        Click any step to jump (real undo — 10–25 steps depending on image size)
       </p>
       {items.slice().reverse().map((item) => (
         <div

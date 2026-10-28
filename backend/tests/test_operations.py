@@ -183,7 +183,7 @@ def test_compare_fanout(client):
 
 
 def test_project_lifecycle(client):
-    created = client.post("/api/projects", json={"name": "مشروع تجريبي"})
+    created = client.post("/api/projects", json={"name": "test project"})
     assert created.status_code == 201, created.text
     project_id = created.json()["id"]
 

@@ -1,378 +1,301 @@
-# 🌟 Lumen — Professional Hybrid Photo & Graphics Suite
+# Lumen
 
-<div align="center">
+A browser-based raster photo editor with a Python vision backend. Layers, masks, typography, brush painting, non-destructive adjustments, and neural background removal — running either fully client-side or against a local FastAPI service.
 
-![Lumen Banner](https://img.shields.io/badge/LUMEN-PHOTO_EDITOR-C97B4A?style=for-the-badge&logo=adobephotoshop&logoColor=white)
+![Lumen workspace](guide-assets/01-workspace.png)
 
-**A high-performance, studio-grade raster photo editor and creative graphics suite built for Web & Desktop.**  
-*Combines the fluidity of modern React 19 & Fabric.js with in-browser ONNX AI models and the algorithmic power of FastAPI, OpenCV, and Pillow.*
+[![CI](https://github.com/muhamedaldias/luen/actions/workflows/ci.yml/badge.svg)](https://github.com/muhamedaldias/luen/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[![React](https://img.shields.io/badge/React-19.0-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-8.0-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v4.0-38B2AC?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![ONNX Runtime Web](https://img.shields.io/badge/ONNX_Runtime-1.19.2_WASM-005CED?style=flat-square&logo=onnx&logoColor=white)](https://onnxruntime.ai/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![OpenCV](https://img.shields.io/badge/OpenCV-Computer_Vision-5C3EE8?style=flat-square&logo=opencv&logoColor=white)](https://opencv.org/)
-[![Tauri](https://img.shields.io/badge/Tauri-v2_Desktop-FFC131?style=flat-square&logo=tauri&logoColor=black)](https://tauri.app/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+## Why this exists
 
-[Features](#-key-features) • [Installation Guide](#-installation--prerequisites) • [Architecture](#-system-architecture) • [Tech Stack](#-technology-stack) • [User Guide & Docs](#-user-guide--documentation) • [API Guide](#-api--operations-registry) • [دليل التثبيت بالعربية](#-متطلبات-التثبيت-والتشغيل-باللغة-العربية)
+Most web editors pick one side of a trade-off. Fully client-side editors stay responsive but fall over on heavy vision work — seamless cloning, inpainting, and multi-band blending are painful to write in JavaScript and easy to write in OpenCV. Cloud editors handle the math but add a round-trip to every slider drag.
 
-</div>
+Lumen runs both, and picks per operation. The switch is a single value: if the operation needs the backend and an image has been uploaded, it goes to `/api/operations/*`; otherwise it runs locally on Canvas 2D. Drag a brightness slider offline and it responds immediately; run a Poisson blend with the backend up and you get the real `cv2.seamlessClone`. There is no mode toggle to manage and no "backend required" wall.
 
----
+The practical consequence is that **the editor works with no backend at all**. Background removal runs locally through ONNX Runtime Web against a bundled 4.4 MB `u2netp` model, so there is no API key, no upload, and no image ever leaves the browser. The Python service is an optional accuracy upgrade, not a prerequisite.
 
-## 📖 Overview
+The one thing that does reach the network is typography: `src/index.css` imports 38 Google Fonts, so text layers fall back to local defaults until that request completes (or indefinitely, offline). See Known limitations.
 
-**Lumen** is engineered to deliver a seamless, Photoshop-grade raster editing experience directly within modern web browsers and as a lightweight native desktop application. 
+## Requirements
 
-Instead of choosing between a pure client-side editor (which struggles with heavy mathematical vision algorithms) and a heavy cloud-only service (which introduces network latency for interactive tasks), Lumen introduces a **Dual-Engine Hybrid Architecture**:
-1. **Interactive Client Stage (Fabric.js & Canvas 2D):** Instant sub-millisecond feedback for dragging, drawing, text styling, layer reordering, snapping, and vector overlays with a memory-safe preview resolution ceiling.
-2. **In-Browser Neural AI Engine (ONNX Runtime Web + WASM):** Runs the `u2netp.onnx` neural model directly inside the client's browser, enabling instant offline AI background extraction without GPU or server requirements.
-3. **Industrial Vision Engine (FastAPI & Multi-Core Process Pool):** Full-precision (`float32`), multi-threaded image processing running on multi-core CPU workers with OpenCV, Pillow, and `rembg`.
-4. **Full Offline Fallback:** When working without internet or without a running backend, Lumen seamlessly switches to its pure local Canvas 2D and ONNX WASM engine so you can continue editing without interruption.
-5. **Single Codebase, Dual Output:** Runs natively on the Web and compiles to a lightweight **15MB Native Desktop App** via **Tauri v2** and **PyInstaller Sidecar**.
-
----
-
-## ✨ Key Features
-
-### 🧠 In-Browser AI & Neural Mask Refinement
-- **Zero-Backend Neural Cutout:** Pre-packaged with `public/models/u2netp.onnx` (4.5MB) executing client-side via `onnxruntime-web` WASM.
-- **Smart Click Anchor Targeting:** Clicking on an object uses coordinates `(fx, fy)` to isolate the specific subject and eliminate background artifacts.
-- **Mathematical Mask Refinement (`maskRefine.ts`):**
-  - **8-Connectivity Connected Components:** Automatically prunes stray islands and secondary reflections.
-  - **Softness Detection & Adaptive Erosion:** Preserves fine transparent edges (e.g., glassware, hair) while eliminating colored edge halos on solid subjects.
-  - **High-Quality Alpha Feathering:** Blends mask perimeters seamlessly into composite canvas targets.
-  - **Graceful Fallback:** Classical region-growing background segmentation when neural confidence is low.
-
-### 🖼️ Creative Asset Library Drawer (`AssetsDrawer`)
-- **Slide-Out Studio Drawer:** Quick access with shortcut `L` or toolbar icon.
-- **Categorized Presets:** Product backdrops, podiums, studio lighting, gradient atmospheres, and solid backdrops.
-- **Instant Insertion:** Drag-and-drop directly onto the canvas or click `+` to insert centered at original scale.
-- **Live Search & Filter:** Instant substring search across categories.
-
-### 💾 Pro Multi-Format Export System (`ExportDialog`)
-- **PNG:** Lossless compression preserving 32-bit alpha transparency.
-- **JPG:** High-speed web compression with a customizable background matte color picker.
-- **WEBP:** Modern high-efficiency format combining high compression ratios with full alpha channel support.
-- **Quality Control:** 60% to 100% fine-tuning slider with persistent user preferences in `localStorage` and `SettingsModal`.
-- **Taint-Free Composite Pipeline:** Custom Canvas 2D exporter avoiding SVG `<foreignObject>` to completely eliminate browser security exceptions.
-
-### 🔍 Live Hover Filter Previews (`FilterInfoCard`)
-- **Interactive Thumbnails:** Hovering over any filter in the TopBar menu displays a live before/after comparison preview card.
-- **Real-Time Synthesis:** Previews are generated through the actual image filter algorithms.
-- **Behavioral Guidance:** Clear descriptions and usage advice for each optical filter.
-
-### 🎨 Layer System, Shapes & Typography
-- **Multi-Type Layer Stack:** Image Layers, Text Layers, Shape Layers (`Rect`, `Ellipse`), Solid Fill Layers, and Brush Stroke Layers.
-- **16 Professional Blend Modes:** Normal, Multiply, Screen, Overlay, Darken, Lighten, Color Dodge, Color Burn, Hard Light, Soft Light, Difference, Exclusion, Hue, Saturation, Color, and Luminosity.
-- **Advanced Text System:** Custom typography, gradients, borders, corner rounding, padding, line-height, letter spacing, alignment, and drop shadows.
-- **Layer Masks (Alpha Masks):** Non-destructive white/black masks with live editing, invert, disable/enable, and bake-in options.
-- **Smart Alignment & Guides:** Magnetic snapping to document bounds (0%, 50%, 100%) and sibling layer edges with visual guide lines.
-
-### 🎨 11 Studio Color Themes
-Seamlessly toggle between custom tailored dark and light studio palettes:
-- **Ember** (Warm studio dark — default)
-- **Arctic** (Cool steel blue)
-- **Sage** (Forest teal dark)
-- **Obsidian** (Deep dark with gold accents)
-- **Pearl** (Clean modern light studio)
-- **Cinematic**, **Warm**, **Cold**, **Noir**, **Faded**, **Vivid**
-
----
-
-## 💻 System Architecture
-
-```
-                                    +------------------------------------------+
-                                    |         Lumen Client (React 19)          |
-                                    |  +------------------------------------+  |
-                                    |  | Fabric.js Stage & Interactive UI   |  |
-                                    |  | - Assets Drawer & Presets (Key: L) |  |
-                                    |  | - Multi-Format Export Dialog       |  |
-                                    |  | - Live Hover Filter Previews       |  |
-                                    |  +------------------+-----------------+  |
-                                    +---------------------|--------------------+
-                                                          |
-                                      +-------------------+-------------------+
-                                      |                                       |
-                       [Backend Connected: High-Res]             [Offline: Client Fallback]
-                                      |                                       |
-                                      v                                       v
-                     +----------------------------------+    +----------------------------------+
-                     |        FastAPI REST API          |    |  Client Engine (localOps.ts)     |
-                     |  +----------------------------+  |    |  - ONNX Runtime Web (u2netp)     |
-                     |  | Security & Upload Guards   |  |    |  - Mask Refine (8-connectivity)  |
-                     |  +--------------+-------------+  |    |  - Canvas 2D Convolution Filters |
-                     |                 |                |    |  - Local Brightness / Contrast   |
-                     |  +--------------v-------------+  |    +----------------------------------+
-                     |  | ProcessPoolExecutor (4-core|  |
-                     |  +--------------+-------------+  |
-                     |                 |                |
-                     |  +--------------v-------------+  |
-                     |  |     Operation Registry     |  |
-                     |  | - OpenCV (Poisson/Inpaint) |  |
-                     |  | - Pillow (Lanczos/Enhance) |  |
-                     |  | - rembg / ONNX Runtime     |  |
-                     |  +----------------------------+  |
-                     +----------------------------------+
-```
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technologies | Purpose |
+| | Version | Notes |
 |---|---|---|
-| **Frontend Framework** | **React 19**, **Vite 8**, **TypeScript 5.7** | Core UI reactivity, ultra-fast HMR, strict type safety |
-| **Canvas Engine** | **Fabric.js v6.4** | Interactive 2D canvas, vector text, shape primitives |
-| **In-Browser AI** | **ONNX Runtime Web (WASM)**, `u2netp.onnx` | Instant client-side AI background segmentation without GPU |
-| **Styling & Themes** | **Tailwind CSS v4**, Lucide Icons | Responsive dockable panels, 11 custom studio themes |
-| **Layout Management** | `react-resizable-panels` | Photoshop/Figma dockable split views |
-| **Backend API** | **FastAPI**, **Uvicorn**, Pydantic v2 | Asynchronous REST endpoints, OpenAPI docs |
-| **Execution Pool** | `concurrent.futures.ProcessPoolExecutor` | True multi-core CPU parallelism bypassing Python GIL |
-| **Computer Vision** | **OpenCV (cv2)**, **NumPy** | Seamless Poisson cloning, inpainting, CLAHE, LAB color space |
-| **Image Core** | **Pillow (PIL)** | Lanczos resampling, format conversions, security checks |
-| **Desktop Shell** | **Tauri v2 (Rust)** | Native OS WebView2 wrapper (15-25MB distribution footprint) |
-| **Desktop Backend** | **PyInstaller** | Bundles FastAPI into an autonomous executable sidecar |
+| Node.js | `^20.19.0` or `>=22.12.0` | Vite 8 requires this. **Node 18 will not work.** |
+| pnpm | `10.x` | Pinned to `10.34.3` in `.mise.toml`. It is the only supported package manager — `pnpm-lock.yaml` is the only lockfile. |
+| Python | `3.10+` | Optional — only for the vision backend |
+| Rust / Cargo | stable | Optional — only for the desktop shell |
 
----
-
-## 🚀 Installation & Prerequisites
-
-Follow these instructions to set up, install, and run Lumen locally.
-
-### 📋 Prerequisites Checklist
-
-| Component | Minimum Version | Recommended | Notes |
-|---|---|---|---|
-| **Node.js** | `v18.0.0+` | `v20.x` or `v22.x LTS` | Required for frontend & dev server |
-| **pnpm** or **npm** | `pnpm v9+` or `npm v9+` | `pnpm 10.x` | Package manager |
-| **Python** *(Optional)* | `v3.10+` | `v3.11.x` | Only needed for backend vision server |
-| **Rust / Cargo** *(Optional)*| Latest stable | Latest | Only needed for building Tauri desktop app |
-
----
-
-### 1️⃣ Clone the Repository
+## Running the web app
 
 ```bash
 git clone https://github.com/muhamedaldias/luen.git
 cd luen
-```
-
----
-
-### 2️⃣ Frontend Setup & Running (Web Application)
-
-> [!TIP]
-> The frontend is **completely self-contained**! Thanks to in-browser **ONNX Runtime Web**, the pre-bundled `u2netp.onnx` model, and local Canvas 2D image operations, you can perform full photo editing, layers, typography, drawing, AI background removal, filters, and exports without running the Python backend.
-
-```bash
-# 1. Install dependencies
 pnpm install
-# or if using npm:
-# npm install
-
-# 2. Start the Vite development server
 pnpm dev
-# or if using npm:
-# npm run dev
 ```
 
-The application will launch immediately at:
-👉 **`http://localhost:8443`** (or `http://localhost:5173`)
+The dev server binds port **8443** (`strictPort` is on, so a busy port fails loudly rather than silently moving). Open `http://localhost:8443`.
 
-To compile the production frontend build:
 ```bash
-pnpm build
-# or: npm run build
+pnpm build      # production bundle into dist/
+pnpm preview    # serve the built bundle
+pnpm typecheck  # tsc --noEmit
+pnpm test       # node-based unit tests, no browser needed
+pnpm verify     # typecheck + test + build
 ```
-The optimized static bundle will be generated inside the `dist/` folder.
 
----
+`pnpm build` produces a ~20.4 MB `dist/`. Only ~1.3 MB of that is application code. The rest is the ONNX Runtime WASM binary (10.5 MB), the bundled segmentation model (4.4 MB), and the Arabic user-guide PDF that ships with the app (4.2 MB). The main bundle is ~862 KB (~251 KB gzipped).
 
-### 3️⃣ Backend Setup (Optional: FastAPI Vision Server)
-
-The Python backend unlocks high-precision industrial vision algorithms (Poisson seamless cloning, multi-band Laplacian pyramid blending, Navier-Stokes inpainting, and server-side CLAHE).
+## Running the backend
 
 ```bash
-# 1. Navigate to the backend directory
 cd backend
-
-# 2. Create and activate a Python virtual environment
 python -m venv .venv
-
-# On Windows:
-.venv\Scripts\activate
-# On Linux / macOS:
-source .venv/bin/activate
-
-# 3. Upgrade pip and install Python dependencies
-pip install --upgrade pip
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# 4. Start the FastAPI development server
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-- **Interactive API Documentation (Swagger UI):** `http://localhost:8000/docs`
-- **Alternative ReDoc UI:** `http://localhost:8000/redoc`
+Swagger UI is at `http://localhost:8000/docs`. The Vite dev server already proxies `/api` to `127.0.0.1:8000`, so no frontend config change is needed.
 
----
+`rembg` and `onnxruntime` are deliberately kept out of `requirements.txt` — they pull in several hundred MB of runtime and model weights, and are only used by the server-side background-removal path. Install them separately when you want that:
 
-### 4️⃣ Desktop Application Packaging (Tauri v2 + PyInstaller)
-
-To compile Lumen as a native standalone desktop executable (`.exe` on Windows):
-
-```powershell
-# 1. Build the production frontend bundle
-pnpm build
-
-# 2. Package the Python backend sidecar
+```bash
 cd backend
-pip install pyinstaller
-pyinstaller lumen.spec --noconfirm
-
-# 3. Copy the compiled sidecar binary to Tauri's binary folder
-Copy-Item dist\lumen-backend\lumen-backend.exe ..\src-tauri\binaries\lumen-backend-x86_64-pc-windows-msvc.exe
-
-# 4. Compile the native desktop installer
-cd ..\src-tauri
-cargo tauri build
+pip install -r requirements-ai.txt
 ```
-The installer executable will be generated inside `src-tauri/target/release/bundle/`.
 
----
+There is one source of truth for Python dependencies: `backend/requirements.txt`. The root `requirements.txt` only forwards to it.
 
-## 📚 User Guide & Documentation
+## Architecture
 
-Lumen includes comprehensive, studio-grade illustrated documentation:
+```
+                    ┌──────────────────────────────┐
+                    │   React 19 + Fabric.js 6     │
+                    │   layers, masks, text, tools │
+                    └───────────────┬──────────────┘
+                                    │
+              canvasImage.imageId == null ?
+                                    │
+                ┌───────────────────┴───────────────────┐
+                │ yes                               no  │
+                ▼                                       ▼
+      ┌─────────────────────┐              ┌────────────────────────┐
+      │  localOps.ts        │              │  FastAPI + OpenCV      │
+      │  Canvas 2D / LUTs   │              │  ProcessPoolExecutor(4)│
+      │  ONNX Runtime Web   │              │  Pillow / NumPy / rembg│
+      │  u2netp.onnx        │              │  /api/operations/*     │
+      └─────────────────────┘              └────────────────────────┘
+              offline                                online
+```
 
-- 📖 **Complete Illustrated User Guide (PDF):** [`Lumen-User-Guide-AR.pdf`](Lumen-User-Guide-AR.pdf) (Also accessible at `/Lumen-User-Guide-AR.pdf` when running the web app).
-- 🌐 **Interactive Web User Guide (HTML):** [`Lumen-User-Guide-AR.html`](Lumen-User-Guide-AR.html).
-- 📸 **Visual Screenshots & Step-by-Step Stages:** Located in the [`guide-assets/`](guide-assets/) directory.
-- 📐 **Comprehensive Architectural Specification:** [`الوثيقة-الشاملة-المحدثة-للمشروع.md`](الوثيقة-الشاملة-المحدثة-للمشروع.md).
+**Frontend.** React 19 with Vite 8 and TypeScript in `strict` mode. Canvas work is Fabric.js 6. State is plain React — five layer arrays plus a `layerOrder` list of references, with fractional 0–1 geometry that survives canvas resizing. There is no Redux, Zustand, or Context: the editor state lives in `src/App.tsx`, which is honest about being the weak point of the codebase (see Known limitations).
 
----
+**Backend.** FastAPI with SQLAlchemy and Alembic, dispatching work through a `ProcessPoolExecutor` so CPU-bound operations actually use multiple cores instead of fighting the GIL. 36 operations are registered behind a single `POST /api/operations/{name}` endpoint; 11 routes in total cover images, uploads, jobs, and saved projects.
 
-## ⌨️ Keyboard Shortcuts
+**Desktop.** Tauri v2 wrapping the same frontend, with a PyInstaller-built sidecar for the backend. Scaffolded but not finished — see Desktop status.
 
-| Shortcut | Tool / Action |
-|---|---|
-| `V` | **Select Tool** (Move, transform, scale) |
-| `C` | **Crop Tool** |
-| `B` | **Brush Tool** (Freehand drawing) |
-| `E` | **Eraser Tool** (Eraser to transparency with ring cursor) |
-| `T` | **Text Tool** (Typography and text boxes) |
-| `U` | **Shape Tool** (Rectangles & Ellipses) |
-| `W` | **Smart Select / Magic Wand** |
-| `Q` | **Quick Select Tool** |
-| `I` | **Eyedropper Tool** (Sample color to palette) |
-| `L` | **Asset Library Drawer** (Toggle backdrops & products drawer) |
-| `H` | **Pan Tool** |
-| `Z` | **Zoom Tool** |
-| `[` / `]` | **Decrease / Increase Brush or Eraser Size** |
-| `Ctrl + Z` / `Cmd + Z` | **Undo** (Adaptive Memento history) |
-| `Ctrl + Y` / `Cmd + Shift + Z` | **Redo** |
-| `Ctrl + S` / `Cmd + S` | **Quick Save Project (`.lumen`)** |
+## Features
 
----
+**Layers.** Image, text, shape (rect/ellipse), solid fill, and brush-stroke layers in one stack. 16 blend modes, per-layer alpha masks (non-destructive, invertible, bakeable), and magnetic snapping to document bounds and sibling edges.
 
-## 📡 API & Operations Registry
+**Typography.** Custom fonts, gradients, per-corner rounding, padding, line height, letter spacing, borders, alignment, and drop shadows. Text layers stay editable rather than being rasterized on commit.
 
-Backend operations follow a unified registry pattern:
+**Color and tone.** Brightness, contrast, exposure in EV stops (`brightness(2^stops)`, ±2 EV), saturation, temperature, highlights, shadows, whites and blacks as white/black-point LUT curves, sharpness, and blur. Levels and curves have a real sampled histogram drawn from the current image — switchable across RGB, R, G, B.
+
+**Image blending.** Five distinct modes — `seamless_normal`, `seamless_mixed`, `seamless_mono`, `pyramid`, and `feather`. All five run client-side. With the backend up, the three `seamless_*` modes map to genuine `cv2.seamlessClone` (`NORMAL_CLONE` / `MIXED_CLONE` / `MONOCHROME_TRANSFER`) and `pyramid` maps to a 5-level Laplacian blend; `feather` is a soft alpha lerp on both paths, so it does not improve. The local implementations are mean-color matching, high-frequency detail reinjection, and multi-scale feathered masks — related techniques, but not the same algorithms, and the UI labels say so.
+
+**Background removal.** `u2netp.onnx` via ONNX Runtime Web (WASM), fully offline. Click-anchored subject targeting, then mask refinement: 8-connectivity connected-component pruning to drop stray islands, softness detection with adaptive erosion to keep hair and glass edges without colored halos, and alpha feathering.
+
+**Selections.** Magic wand (flood fill) and quick-select (brush-painted seeds), plus mask editing with brush and eraser. There is no rectangular marquee or lasso tool — selections come from color and from painted seeds.
+
+**Export.** PNG (32-bit alpha), JPEG (with matte color), and WebP, at 60–100% quality, via a Canvas 2D compositor that avoids SVG `<foreignObject>` and the tainted-canvas exceptions that come with it.
+
+**Projects.** Save and load `.lumen` project files; autosave to `localStorage` with restore-on-reload.
+
+**Themes.** 11 palettes (Ember, Arctic, Sage, Obsidian, Pearl, Cinematic, Warm, Cold, Noir, Faded, Vivid), persisted to `localStorage`.
+
+### Keyboard shortcuts
+
+| Key | Action | | Key | Action |
+|---|---|---|---|---|
+| `V` | Select | | `H` | Pan |
+| `C` | Crop | | `Z` | Zoom |
+| `B` | Brush | | `[` `]` | Brush / eraser size |
+| `E` | Eraser | | `Ctrl+Z` | Undo |
+| `T` | Text | | `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
+| `U` | Shape | | `Ctrl+S` | Save `.lumen` project |
+| `W` | Smart select | | `Ctrl+L` | Levels |
+| `K` | Magic wand | | `Ctrl+M` | Curves |
+| `Q` | Quick select | | `Ctrl+Shift+M` | Mask from selection |
+| `I` | Eyedropper | | `G` / `R` | Grid / rulers |
+| `L` | Asset library | | | |
+
+Color balance has no shortcut — use the Adjust tab. `Ctrl+Shift+M` derives a layer mask from the current selection, or adds a white mask when there is none.
+
+## API
+
+All operations share one registry and one endpoint. Everything starts by uploading an image, which returns the `image_id` every other call needs:
+
+```bash
+# 1. upload — returns image_id
+curl -s -F file=@photo.jpg http://127.0.0.1:8000/api/images/upload
+# {"image_id":"a3f1…","url":"/api/storage/local/a3f1…/original.png","width":1920,
+#  "height":1080,"size_bytes":284913,"mime":"image/jpeg"}
+
+# 2. run an operation
+curl -s -X POST http://127.0.0.1:8000/api/operations/adjust \
+  -H 'Content-Type: application/json' \
+  -d '{"image_id":"a3f1…","params":{"exposure":25,"contrast":10}}'
+# {"status":"done","result_url":"/api/storage/local/a3f1…/adjusted.png"}   # fast
+
+curl -s -X POST http://127.0.0.1:8000/api/operations/blend \
+  -H 'Content-Type: application/json' \
+  -d '{"image_id":"a3f1…","params":{"foreground_id":"b7c2…","mode":"seamless_normal"}}'
+# {"status":"processing","job_id":"9e01…"}                                # slow
+
+# 3. poll a job
+curl -s http://127.0.0.1:8000/api/operations/9e01…/status
+# {"status":"done","result_url":"/api/storage/local/a3f1…/blended.png","error":null}
+```
+
+Serve the returned `result_url` as-is — it is already absolute from the API root, and the Vite dev proxy forwards `/api` so the same path works from the frontend.
+
+Which operations return a job rather than a result is decided by `get_slow_operations()` — see the Mode column below.
 
 ```http
 POST /api/operations/{operation_name}
 Content-Type: application/json
 
-{
-  "image_id": "hex_image_id",
-  "params": { ... }
-}
+{ "image_id": "hex_image_id", "params": { } }
 ```
 
-### Supported Operations:
-| Operation Key | Description | Engine | Mode |
+| Operation | Notes | Engine | Mode |
 |---|---|---|---|
-| `crop`, `resize`, `rotate`, `flip` | Spatial transformations with Lanczos resampling | Pillow / OpenCV | Sync |
-| `adjust` | Brightness, contrast, saturation, shadows, highlights in LAB | OpenCV / Pillow | Sync |
-| `auto_enhance` | Local contrast adaptive histogram equalization (CLAHE) | OpenCV | Async (Job) |
-| `pro_enhance` | 5-stage professional vision pipeline | OpenCV | Async (Job) |
-| `blend` | Poisson Seamless Cloning & Laplacian multi-band blending | OpenCV | Async (Job) |
-| `remove_background` | AI background removal (`isnet-general-use` / `GrabCut`) | rembg / OpenCV | Async (Job) |
-| `remove_object` | Navier-Stokes & Telea inpainting with mask dilation | OpenCV | Sync |
-| `levels`, `curves` | Photoshop-grade color levels and natural cubic splines | NumPy / Sci | Sync |
-| `blur`, `sharpen`, `vignette` | Gaussian filters, unsharp masks, and vignette gradients | OpenCV / Pillow | Sync |
-| `invert`, `posterize`, `solarize` | Artistic and tonal color operations | Pillow / NumPy | Sync |
-| `upscale` | High-quality 2x / 4x Lanczos4 interpolation with pixel cap | OpenCV | Async (Job) |
+| `crop` `resize` `rotate` `flip` `affine` `resize_canvas` | Spatial transforms, Lanczos resampling | Pillow / OpenCV | sync |
+| `adjust` `brightness_contrast` `hue_saturation` `color_balance` `vibrance` | Tonal and color correction, LAB space | OpenCV | sync |
+| `levels` `curves` `threshold` `posterize` `invert` `solarize` | Color levels, cubic-spline curves | NumPy | sync |
+| `blur` `sharpen` `motion_blur` `grain` `vignette` `pixelate` `glitch` | Convolution and stylization | OpenCV / Pillow | sync |
+| `grayscale` `sepia` `filter` `style` | Artistic and stylistic filters | Pillow / NumPy | sync |
+| `auto_enhance` | CLAHE local contrast | OpenCV | job |
+| `pro_enhance` | Multi-stage enhancement pipeline | OpenCV | job |
+| `blend` | Poisson cloning and Laplacian multi-band blending | OpenCV | job |
+| `remove_object` | Navier–Stokes and Telea inpainting with mask dilation | OpenCV | job |
+| `upscale` | 2× / 4× Lanczos4 with a pixel cap | OpenCV | job |
+| `denoise` `radial_blur` | Non-local means denoising, zoom-blur synthesis | OpenCV | job |
+| `remove_background` | Tries `isnet-general-use`, else `u2net`, else GrabCut | rembg / OpenCV | job* |
 
----
+\* `remove_background` is a job only when `rembg` is importable; without it the operation runs synchronously through the process pool. The split for every operation comes from `get_slow_operations()` in `backend/app/config.py`. The model name is what is attempted first — `background.py` silently falls back to `u2net` and then to OpenCV GrabCut, so the returned quality depends on which path ran.
 
-## 🇸🇦 متطلبات التثبيت والتشغيل باللغة العربية
+Full schemas are in the Swagger UI, which is generated from the code and therefore always current.
 
-برنامج **Lumen** مصمم ليعمل بسهولة فائقة دون تعقيدات، حيث يمكن تشغيله كبرنامج ويب فوري أو كمنظومة كاملة مع خادم بايثون لمعالجة الصور المتقدمة.
+### Configuration
 
-### 📌 المتطلبات الأساسية للنظام:
-1. **Node.js**: الإصدار `18` أو أحدث (يُفضل بشدة الإصدار المستقر `Node.js 20 LTS` أو `22`).
-2. **مدير الحزم**: `pnpm` (الموصى به) أو `npm`.
-3. **Python (اختياري)**: الإصدار `3.10` فما فوق (مطلوب فقط في حال الرغبة بتشغيل خادم المعالجة الخلفي FastAPI).
-4. **Rust / Cargo (اختياري)**: مطلوب فقط لتجميع تطبيق سطح المكتب المستقل عبر Tauri v2.
+Backend settings come from environment variables or `backend/.env` (see `backend/.env.example`). The defaults:
 
----
+| Variable | Default | Purpose |
+|---|---|---|
+| `HOST` / `PORT` | `0.0.0.0` / `8000` | Bind address and port |
+| `DATABASE_URL` | `sqlite:///./lumen.db` | SQLAlchemy URL for projects and image metadata |
+| `STORAGE_ROOT` | `storage` | Where originals, results, and masks are written |
+| `MAX_FILE_SIZE_MB` | `15` | Upload ceiling |
+| `MAX_DIMENSION` | `8000` | Longest side allowed after resize |
+| `MAX_IMAGE_PIXELS` | `64000000` | Total pixel ceiling (decompression-bomb guard) |
+| `POOL_WORKERS` | `4` | `ProcessPoolExecutor` worker count |
+| `PREVIEW_MAX_SIDE` | `4096` | Downscale target for interactive previews |
+| `JOB_TTL_SECONDS` | `600` | How long a finished job stays pollable |
+| `CORS_ORIGINS` | localhost:5173, :8443 | Allowed browser origins |
+| `CORS_ORIGIN_REGEX` | any `localhost` / `127.0.0.1` port | Additional origin pattern |
+| `DEFAULT_USER_ID` | `local` | Storage namespace; there are no accounts |
+| `DEBUG` | `false` | Enables debug mode and `/docs` verbosity |
 
-### 🚀 خطوات التشغيل خطوة بخطوة:
+## Testing
 
-#### 1. استنساخ المشروع من GitHub:
 ```bash
-git clone https://github.com/muhamedaldias/luen.git
-cd luen
+pnpm test        # mask refinement, blend planning, histogram, menu wiring
+pnpm typecheck   # strict TypeScript
+cd backend && python -m pytest -q    # 22 tests
 ```
 
-#### 2. تثبيت الحزم وتشغيل الواجهة الأمامية:
+CI runs all three on every push and pull request to `main`, plus two guards worth keeping: the built bundle is checked for any leftover `cdn.jsdelivr.net` reference (the ONNX runtime and model must stay local so the app works offline), and the repository is scanned for image or model files under 200 bytes, which is what an unfetched Git LFS pointer looks like.
+
+The frontend tests are plain Node scripts rather than a browser runner. That keeps `pnpm test` fast and dependency-free, but it also means **there are no DOM or browser integration tests**. Anything that only breaks in a real browser — canvas compositing, Fabric event handling, focus behavior — is currently caught by hand, not by CI. This is the largest testing gap in the project.
+
+## Desktop status
+
+The Tauri shell is configured but **does not yet produce a working installer**. Three things are missing:
+
+| Item | State | Needed |
+|---|---|---|
+| `src-tauri/src/main.rs` | Incomplete | Does not spawn the backend sidecar |
+| `src-tauri/capabilities/default.json` | Incomplete | Grants only `core:default`; needs `shell:allow-execute` / `allow-spawn` |
+| `src-tauri/binaries/` | Absent | Must contain a built `lumen-backend-<target-triple>` executable |
+
+Everything else is in place — `tauri.conf.json` sets the identifier (`com.lumen.editor`), CSP, `externalBin`, and `frontendDist`, and the icons are real binaries. To finish it:
+
 ```bash
-# تثبيت الاعتماديات
-pnpm install
-# أو باستخدام npm:
-# npm install
-
-# تشغيل خادم التطوير
-pnpm dev
-# أو:
-# npm run dev
+pyinstaller backend/lumen.spec --noconfirm
+# copy the output to src-tauri/binaries/lumen-backend-x86_64-pc-windows-msvc.exe
+pnpm tauri build
 ```
-افتح المتصفح على الرابط: **`http://localhost:8443`** (أو `http://localhost:5173`).
 
-> [!NOTE]
-> **الذكاء الاصطناعي مدمج ويعمل بدون إنترنت وبدون سيرفر!**  
-> بفضل نموذج `u2netp.onnx` ومكتبة `onnxruntime-web` عبر تقنية WebAssembly، يمكنك إزالة الخلفية وقص الصور وإضافة النصوص والأشكال والفلاتر وتصديرها بصيغ PNG/JPG/WEBP مباشرة دون تشغيل الباك-إند.
+Windows builds are not code-signed, so SmartScreen will warn on first run.
 
-#### 3. تشغيل الخادم الخلفي (اختياري للميزات المتقدمة مثل دمج بواسون السلس):
-```bash
-cd backend
-python -m venv .venv
+## Known limitations
 
-# على نظام Windows:
-.venv\Scripts\activate
-# على أنظمة Linux أو macOS:
-source .venv/bin/activate
+These are current, not a backlog.
 
-# تثبيت متطلبات بايثون
-pip install -r requirements.txt
+- **The backend has no authentication and no rate limiting**, and its default host in `config.py` is `0.0.0.0` (all interfaces). The command above passes `--host 127.0.0.1` to keep it local — keep that flag unless you intend to expose it, and do not expose port 8000 without putting something in front of it.
+- **`routes_images.py` returns `Access-Control-Allow-Origin: *`** for image delivery. Fine for local development, wrong for a public deployment.
+- **`src/App.tsx` is ~2,900 lines** with 56 `useState`, 30 `useRef`, and 26 `useEffect` hooks. It works, and the extraction targets are clear (`src/lib/` already holds 18 focused modules), but it is the main refactor target and the hardest file to review.
+- **Undo stores full document snapshots.** Depth adapts to image size (25 / 15 / 10 steps for small / medium / large documents) to bound memory. Past that depth, history is lossy.
+- **No browser integration tests** — see Testing.
+- **38 Google Fonts load from one render-blocking `@import`** in `src/index.css`. They are genuinely used by the text tool, so the fix is self-hosting or `font-display` with a preload, not removal.
+- **The desktop shell is unfinished** — see Desktop status.
 
-# تشغيل الخادم
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-توثيق Swagger التفاعلي متاح عبر: `http://localhost:8000/docs`.
+## Troubleshooting
 
----
+**`EBUSY: resource busy or locked` from Vite's file watcher on Windows.** Usually a temp-file swap from an editor saving over a watched file. Stop the dev server, save the file, restart.
 
-## 📄 License
+**`ERR_PNPM_IGNORED_BUILDS`.** `pnpm-workspace.yaml` controls which dependencies may run install scripts. `protobufjs` is allowed (onnxruntime-web needs it); `canvas` is explicitly denied because it is an unused optional dependency of Fabric that requires cairo/pango and fails to build on most Linux systems.
 
-This project is open-source and licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+**Nothing loads at `http://localhost:8443`.** `strictPort` is enabled, so if the port was already taken the server failed instead of quietly moving. Check for a stale process on 8443.
 
-<div align="center">
-<b>Lumen Photo Suite</b> — Engineered for performance, creative control, and seamless editing.
-</div>
+**Background removal is slow on first use.** ONNX Runtime compiles its WASM kernels on first inference. Subsequent runs are much faster.
+
+## Documentation
+
+- **[Lumen-User-Guide-AR.pdf](Lumen-User-Guide-AR.pdf)** — illustrated Arabic user guide, also served at `/Lumen-User-Guide-AR.pdf` by the web app.
+- **[Lumen-User-Guide-AR.html](Lumen-User-Guide-AR.html)** — same guide in HTML.
+- **[guide-assets/](guide-assets/)** — the screenshots used in the guide and above.
+- **[docs/PROJECT-SPEC.md](docs/PROJECT-SPEC.md)** — the full architectural specification.
+- **[docs/](docs/)** — design notes and the Figma-scaffold migration analysis.
+
+## Credits
+
+- **[U-2-Net](https://github.com/xuebinqin/U-2-Net)** by Xuebin Qin — the `u2netp` segmentation model.
+- **[rembg](https://github.com/danielgatis/rembg)** by Daniel Gatis — server-side background removal.
+- **[Fabric.js](https://github.com/fabricjs/fabric.js)**, **[ONNX Runtime Web](https://github.com/microsoft/onnxruntime)**, **[OpenCV](https://opencv.org/)**, and **[Tailwind CSS](https://tailwindcss.com/)**.
+
+The project began as a Figma Make scaffold; roughly 85% of `vite.config.ts` is still Figma's development infrastructure. `docs/figma-vs-lumen-from-scratch.md` records what that means for anyone maintaining the build config.
+
+## Contributing
+
+Issues and pull requests are welcome. Two things to know before you start:
+
+- `pnpm verify` runs typecheck, tests, and a production build — CI runs exactly this, so run it locally first.
+- `src/lib/*.ts` modules are the preferred place for logic; `src/App.tsx` is already too large and new state there makes review harder, not easier.
+
+There is no code of conduct or contributor guide yet, and no CLA. Commit messages follow `type: summary` (the existing history uses `feat:`, `fix:`, and `docs:`).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Language
+
+Everything in this repository — code, comments, commit messages, and docs — is written in English.
+
+The one exception is a localized end-user deliverable: [`Lumen-User-Guide-AR.pdf`](Lumen-User-Guide-AR.pdf), an illustrated Arabic walkthrough of the editor. It is a product asset for Arabic-speaking users, not development documentation, and it is also served by the running app at `/Lumen-User-Guide-AR.pdf`.
+

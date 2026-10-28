@@ -14,7 +14,7 @@ router = APIRouter(prefix="/compare", tags=["compare"])
 async def compare_operation(operation_name: str, body: OperationRequest):
     engines = get_comparison(operation_name)
     if not engines:
-        raise HTTPException(status_code=404, detail="لا توجد مقارنة مسجلة لهذه العملية")
+        raise HTTPException(status_code=404, detail="no comparison registered for this operation")
     user_id = get_settings().default_user_id
 
     tasks = [

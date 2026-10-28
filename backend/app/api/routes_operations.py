@@ -15,7 +15,7 @@ router = APIRouter(prefix="/operations", tags=["operations"])
 async def run_operation(operation_name: str, body: OperationRequest):
     handler = get_operation(operation_name)
     if handler is None:
-        raise HTTPException(status_code=404, detail=f"عملية غير معروفة: {operation_name}")
+        raise HTTPException(status_code=404, detail=f"unknown operation: {operation_name}")
     user_id = get_settings().default_user_id
 
     slow_ops = get_settings().slow_operations if hasattr(get_settings(), 'slow_operations') else get_slow_operations()

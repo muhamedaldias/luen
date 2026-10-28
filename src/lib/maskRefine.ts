@@ -1,8 +1,8 @@
-/* ── تنقية قناع ألفا: دوال نقية بلا DOM (قابلة للاختبار المباشر) ──
- * تستخدمها إزالة الخلفية (العصبية والكلاسيكية) لمعالجة عيوب القناع الخام:
- * البقع الشاردة، الهالة الملونة حول الحواف، والانتقالات غير المؤكدة. */
+/* ── Alpha mask refinement: pure functions with no DOM (directly testable) ──
+ * Used by background removal (neural and classical) to fix defects in the raw mask:
+ * stray specks, the colored halo around edges, and uncertain transitions. */
 
-/** وسم المكوّنات المتصلة (8-اتصال): مساحات وصناديق إحاطة لكل مكوّن. */
+/** Label connected components (8-connectivity): areas and bounding boxes per component. */
 type ComponentMap = {
   count: number;
   labels: Int32Array;
@@ -62,8 +62,8 @@ function labelMaskComponents(mask: Uint8ClampedArray, w: number, h: number): Com
   return { count: comp, labels, areas, bx0, bx1, by0, by1 };
 }
 
-/** «ملاصق للحافة»: صندوقه كله داخل شريط خارجي ضحل (16% دخولًا، 30% عمقًا)
- * ويتماسك مع إطار الصورة — نمط بقايا قُصّت عند الحدود، لا جزء منفصل بمساحة حرة. */
+/** "Edge-hugging": its whole bounding box lies inside a shallow outer band (16% inset, 30% deep)
+ * and it touches the image frame — the signature of remnants clipped at the border, not a separate part with free space. */
 function isEdgeHugging(c: ComponentMap, id: number, w: number, h: number): boolean {
   const inBand =
     (c.bx0[id] <= 0.16 * w && c.bx1[id] <= 0.3 * w) ||
@@ -79,12 +79,12 @@ function dropComponent(mask: Uint8ClampedArray, c: ComponentMap, id: number): vo
   for (let i = 0; i < mask.length; i++) if (c.labels[i] === id) mask[i] = 0;
 }
 
-/** يُبقي المكوّنات المتصلة الموثوقة ويصفّر المشبوهة (8-اتصال). قاعدتا الحذف:
- * 1) أي مكوّن أصغر من 8% من أكبر مكوّن.
- * 2) «الملاصق للحافة»: مكوّن يبدأ داخل شريط 16% الخارجي ولا يمتد عمقًا
- *    (حد 30%) ومساحته أقل من 45% من الأكبر — نمط بقايا الانعكاسات
- *    والإضاءة المنفصلة؛ الموضوع الحقيقي المقصوص عند الإطار يمتد أعمق من 30%.
- * تعدّل المصفوفة في مكانها. */
+/** Keeps trustworthy connected components and zeroes the suspicious ones (8-connectivity). Two removal rules:
+ * 1) Any component smaller than 8% of the largest component.
+ * 2) "Edge-hugging": a component that starts inside the outer 16% band and does not extend deeper
+ *    (30% threshold) with an area below 45% of the largest — the signature of reflection
+ *    and detached-lighting remnants; a genuine subject cropped at the frame extends deeper than 30%.
+ * Mutates the array in place. */
 export function keepMajorMaskComponents(
   mask: Uint8ClampedArray,
   w: number,
@@ -103,9 +103,9 @@ export function keepMajorMaskComponents(
   }
 }
 
-/** تصفية موثوقة بالنقرة: المستخدم نقر موضوعًا — يُبقى مكوّنه دائمًا، ومعه
- * المكوّنات غير الملاصقة للحافة التي تبلغ 30% من أكبر مكوّن فأكثر.
- * (ax, ay) إحداثيات النقرة بمساحة القناع نفسها. */
+/** Click-anchored filtering: the user clicked a subject — its component is always kept, along with
+ * the non-edge-hugging components that reach at least 30% of the largest component.
+ * (ax, ay) are the click coordinates in the mask's own space. */
 export function keepAnchorMaskComponents(
   mask: Uint8ClampedArray,
   w: number,
@@ -119,6 +119,12 @@ export function keepAnchorMaskComponents(
   const cx = Math.min(w - 1, Math.max(0, Math.round(ax)));
   const cy = Math.min(h - 1, Math.max(0, Math.round(ay)));
   const anchorId = c.labels[cy * w + cx];
+  if (anchorId === 0) {
+    // The click landed on the background (outside any subject): there is no component to anchor on —
+    // fall back to keeping only the largest components instead of wiping the whole mask.
+    keepMajorMaskComponents(mask, w, h);
+    return;
+  }
   let largest = 0;
   for (let id = 1; id <= c.count; id++) if (c.areas[id] > largest) largest = c.areas[id];
   const min = largest * minRatioOfLargest;
@@ -129,16 +135,16 @@ export function keepAnchorMaskComponents(
   }
 }
 
-/** نسبة بكسلات القناع «غير المؤكدة» (بين 64 و191) — قياس نعومة الموضوع.
- * الزجاج المصنفر والشفاف يعطيان نسبة عالية؛ الموضوع المعتم نسبة منخفضة. */
+/** Fraction of "uncertain" mask pixels (between 64 and 191) — a measure of how soft the subject is.
+ * Frosted glass and translucent subjects give a high fraction; an opaque subject gives a low one. */
 export function maskSoftnessRatio(mask: Uint8ClampedArray, n: number): number {
   let mid = 0;
   for (let i = 0; i < n; i++) if (mask[i] > 64 && mask[i] < 192) mid++;
   return mid / Math.max(1, n);
 }
 
-/** منحنى ثقة smoothstep بنطاق واسع (15%–85%): يكتم الهالات الخافتة دون
- * أكل الموضوعات شبه الشفافة (زجاج، أقمشة) التي تسكن منتصف النطاق. */
+/** Wide-range smoothstep confidence curve (15%–85%): suppresses faint halos without
+ * eating translucent subjects (glass, fabric) that sit in the middle of the range. */
 export function sharpenAlpha(a: number): number {
   let t = (a / 255 - 0.15) / 0.7;
   if (t <= 0) return 0;
@@ -146,8 +152,8 @@ export function sharpenAlpha(a: number): number {
   return Math.round(t * t * (3 - 2 * t) * 255);
 }
 
-/** تآكل منفصل (min filter بنافذة (2r+1)²) — يبتلع 1-3px من حافة الخلفية
- * فيختفي الهalo الملون العالق على حدود الموضوع. */
+/** Separable erosion (min filter over a (2r+1)² window) — swallows 1-3px of the background edge
+ * so the colored halo stuck to the subject boundary disappears. */
 export function erodeAlpha(
   alpha: Uint8ClampedArray,
   w: number,
@@ -156,7 +162,7 @@ export function erodeAlpha(
 ): void {
   if (r <= 0) return;
   const tmp = new Uint8ClampedArray(alpha.length);
-  // مرور أفقي
+  // Horizontal pass
   for (let y = 0; y < h; y++) {
     const row = y * w;
     for (let x = 0; x < w; x++) {
@@ -170,7 +176,7 @@ export function erodeAlpha(
       tmp[row + x] = m;
     }
   }
-  // مرور رأسي
+  // Vertical pass
   for (let x = 0; x < w; x++) {
     for (let y = 0; y < h; y++) {
       let m = 255;
@@ -185,8 +191,8 @@ export function erodeAlpha(
   }
 }
 
-/** ريشة ناعمة: مرورّا صندوق منفصلان (تقريب غاوسي) — يعيد للحدود انتقالًا طبيعيًا
- * بعد التآكل بدل حد قاطع مسنن. */
+/** Soft feather: two separable box passes (a Gaussian approximation) — restores a natural transition
+ * at the boundary after erosion instead of a hard jagged edge. */
 export function featherAlpha(
   alpha: Uint8ClampedArray,
   w: number,
@@ -228,7 +234,7 @@ export function featherAlpha(
   boxBlur(tmp, alpha, false);
 }
 
-/** أنصاف أقطار التنقية بحسب حجم الصورة: صور صغيرة لمسة خفيفة، كبيرة أقوى. */
+/** Refinement radii scaled by image size: a light touch for small images, stronger for large ones. */
 export function refineRadii(minSide: number): { erode: number; feather: number } {
   return {
     erode: Math.min(3, Math.max(1, Math.round(minSide / 400))),

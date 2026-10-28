@@ -1,7 +1,8 @@
-"""دمج صورتين بأدق خوارزميات OpenCV — جودة قصوى.
+"""Blend two images with OpenCV's most precise algorithms — maximum quality.
 
-الخلفية: الصورة الحالية (image_id). الأمامية: إما image_id ثانٍ (foreground_id)
-أو base64/dataURL (foreground). كل المعالجة float32 وتحافظ على Alpha.
+Background: the current image (image_id). Foreground: either a second image_id
+(foreground_id) or base64/dataURL data (foreground). All processing is float32
+and preserves alpha.
 """
 
 import base64
@@ -52,7 +53,7 @@ def _num(params: dict, key: str, default: float) -> float:
 
 
 def _reinhard_match(src_bgr: np.ndarray, ref_bgr: np.ndarray, strength: float = 1.0) -> np.ndarray:
-    """مطابقة لون Reinhard في LAB: تنقل mean/std من المرجع — تقلل فرق الإضاءة قبل الدمج."""
+    """Reinhard color matching in LAB: transfers mean/std from the reference — reduces the lighting gap before blending."""
     try:
         src_lab = cv2.cvtColor(src_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
         ref_lab = cv2.cvtColor(ref_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
@@ -72,12 +73,12 @@ def _reinhard_match(src_bgr: np.ndarray, ref_bgr: np.ndarray, strength: float = 
 
 
 def _feather_mask(h: int, w: int, feather: int) -> np.ndarray:
-    """قناع أبيض كامل بحواف مُنعّمة (للـ pyramid/feather)."""
+    """Fully white mask with softened edges (for pyramid/feather)."""
     mask = np.ones((h, w), dtype=np.float32)
     f = int(max(0, min(120, feather)))
     if f <= 0:
         return (mask * 255).astype(np.uint8)
-    # تآكل داخلي ثم Gaussian لإنشاء تدرج ناعم فقط على الحواف
+    # Inner erosion then Gaussian, so the smooth ramp falls only along the edges
     k = max(3, (f * 2 + 1) | 1)
     eroded = cv2.erode(mask, np.ones((3, 3), np.uint8), iterations=min(f, 12))
     soft = cv2.GaussianBlur(eroded, (k, k), 0)
@@ -85,16 +86,16 @@ def _feather_mask(h: int, w: int, feather: int) -> np.ndarray:
 
 
 def _pyramid_blend(bg: np.ndarray, fg: np.ndarray, mask01: np.ndarray, levels: int = 5) -> np.ndarray:
-    """دمج هرم لابلاس متعدد النطاقات (Burt & Adelson): يزيل خط الفاصل تماماً."""
+    """Multi-band Laplacian pyramid blend (Burt & Adelson): removes the seam entirely."""
     h, w = bg.shape[:2]
     levels = max(2, min(6, levels))
-    # هرم غاوسي للقناع
+    # Gaussian pyramid for the mask
     gp_mask = [mask01.astype(np.float32)]
     cur = mask01.astype(np.float32)
     for _ in range(levels - 1):
         cur = cv2.pyrDown(cur)
         gp_mask.append(cur)
-    # هرم لابلاس للصورتين
+    # Laplacian pyramid for both images
     def lap_pyr(img: np.ndarray) -> list:
         gp = [img.astype(np.float32)]
         c = img.astype(np.float32)
@@ -137,7 +138,7 @@ def blend(image_id: str, user_id: str, params: dict) -> str:
     feather = int(max(0, min(80, _num(params, "feather", 12))))
     color_match = str(params.get("color_match", "1")).lower() not in ("0", "false", "no")
 
-    # تحجيم الأمامية كنسبة من عرض الخلفية مع الحفاظ على النسبة
+    # Scale the foreground as a ratio of the background width, preserving aspect ratio
     target_w = max(8, int(bw * scale_pct / 100.0))
     ratio = target_w / max(1, fg_img.width)
     target_h = max(8, int(fg_img.height * ratio))
@@ -150,7 +151,7 @@ def blend(image_id: str, user_id: str, params: dict) -> str:
 
     bg_bgr = _bgr_from(bg_img)
 
-    # موضع المركز (نسبة مئوية من الخلفية) مع تقييد داخل الحدود
+    # Center position (percentage of the background), clamped to the bounds
     cx = int(bw * cx_pct / 100.0)
     cy = int(bh * cy_pct / 100.0)
     fh, fw = fg_bgr.shape[:2]
@@ -158,7 +159,7 @@ def blend(image_id: str, user_id: str, params: dict) -> str:
     y0 = max(0, min(bh - fh, cy - fh // 2))
     center = (x0 + fw // 2, y0 + fh // 2)
 
-    # مطابقة لون اختيارية لمنطقة الخلفية المستهدفة (تحسّن Poisson كثيراً)
+    # Optional color match to the target background region (improves Poisson a lot)
     if color_match:
         x1, y1 = max(0, x0), max(0, y0)
         x2, y2 = min(bw, x0 + fw), min(bh, y0 + fh)
@@ -167,7 +168,7 @@ def blend(image_id: str, user_id: str, params: dict) -> str:
             if ref.shape[:2] == fg_bgr.shape[:2]:
                 fg_bgr = _reinhard_match(fg_bgr, ref, strength=0.65)
 
-    # قناع من ألفا الأمامية (إن وجدت) وإلا مستطيل كامل — مع تنعيم الحواف
+    # Mask from the foreground alpha (when present), otherwise a full rectangle — with edge softening
     if fg_alpha.mean() < 250:
         base_mask = fg_alpha
     else:
@@ -193,11 +194,11 @@ def blend(image_id: str, user_id: str, params: dict) -> str:
         x2, y2 = x0 + fw, y0 + fh
         roi_bg = canvas[y1:y2, x1:x2]
         m01 = (base_mask.astype(np.float32) / 255.0)
-        # إن كانت الأمامية شفافة جزئياً ندمج ألفاها مع القناع
+        # If the foreground is partially transparent, blend its alpha into the mask
         blended_roi = _pyramid_blend(roi_bg, fg_bgr, m01, levels=5)
         canvas[y1:y2, x1:x2] = blended_roi
         out = canvas
-    else:  # feather — مزج ألفا ناعم كلاسيكي عالي الجودة
+    else:  # feather — classic high-quality soft alpha blend
         canvas = bg_bgr.astype(np.float32)
         alpha = (base_mask.astype(np.float32) / 255.0)[:, :, None]
         x1, y1 = x0, y0

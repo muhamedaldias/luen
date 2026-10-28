@@ -6,6 +6,7 @@ import {
   Type,
   Square,
   Wand2,
+  WandSparkles,
   Lasso,
   Eraser,
   Pipette,
@@ -42,6 +43,8 @@ const tools: Tool[] = [
   { id: "eraser", icon: <Eraser size={18} strokeWidth={1.75} />, label: "Eraser", shortcut: "E" },
   { id: "text", icon: <Type size={18} strokeWidth={1.75} />, label: "Text", shortcut: "T" },
   { id: "shape", icon: <Square size={18} strokeWidth={1.75} />, label: "Shape", shortcut: "U" },
+  // Magic Wand was fully implemented in Canvas/App but no button led to it (a dead feature).
+  { id: "magic-wand", icon: <WandSparkles size={18} strokeWidth={1.75} />, label: "Magic Wand", shortcut: "K" },
   { id: "smart-select", icon: <Wand2 size={18} strokeWidth={1.75} />, label: "Smart Select", shortcut: "W" },
   { id: "quick-select", icon: <Lasso size={18} strokeWidth={1.75} />, label: "Quick Select", shortcut: "Q" },
   { id: "eyedropper", icon: <Pipette size={18} strokeWidth={1.75} />, label: "Eyedropper", shortcut: "I" },
@@ -79,7 +82,7 @@ export default function LeftToolbar({ activeTool = "select", onToolChange, libra
         />
       ))}
 
-      {/* Library — قسم إدراج المحتوى (ليس أداة) */}
+      {/* Library — the content insertion section (not a tool) */}
       <div className="w-7 my-1" style={{ borderTop: "1px solid var(--border)" }} />
       <LibraryButton open={libraryOpen} onClick={onToggleLibrary} />
 
@@ -160,7 +163,6 @@ function ToolButton({
   const [hovered, setHovered] = useState(false);
 
   function handleClick() {
-    console.log(`[toolbar] click tool=${tool.id}`);
     onClick();
   }
 

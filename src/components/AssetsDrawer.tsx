@@ -1,5 +1,5 @@
-// درج مكتبة الأصول: يزلق من اليسار فوق الكانفس — بحث + خلفيات/منتجات + فئات
-// + شبكة 3 أعمدة. كل بطاقة: سحب وإفلات على الكانفس، أو زر + (أو نقرة) للإدراج المركزي.
+// Asset library drawer: slides in from the left over the canvas — search, backdrops/products, categories,
+// and a 3-column grid. Every card supports drag-and-drop onto the canvas, or the + button (or a click) to insert it centered.
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, X, Mountain, Package } from "lucide-react";
 import { ASSET_LIST, assetDataUrl, type AssetDef, type AssetKind } from "../lib/assetLibrary";
@@ -71,7 +71,7 @@ export default function AssetsDrawer({
       }}
       aria-label="Asset library"
     >
-      {/* الرأس */}
+      {/* Header */}
       <div className="shrink-0 px-3 pt-3 pb-2" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="flex items-center justify-between mb-2">
           <div>
@@ -161,7 +161,7 @@ export default function AssetsDrawer({
         </div>
       </div>
 
-      {/* الشبكة */}
+      {/* Grid */}
       <div className="flex-1 overflow-y-auto px-3 py-2.5" style={{ minWidth: 0 }}>
         {items.length === 0 ? (
           <p className="text-[11px] text-center pt-8" style={{ color: "var(--muted-foreground)" }}>

@@ -20,7 +20,7 @@ USER_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
 
 
 def _resolve_storage_file(user_id: str, image_id: str, filename: str):
-    """مسار آمن بدون إنشاء مجلدات + حصر داخل storage_root (منع traversal)."""
+    """Safe path that creates no directories + confined to storage_root (traversal prevention)."""
     settings = get_settings()
     root = settings.storage_root.resolve()
     candidate = (root / user_id / image_id / filename).resolve()
@@ -51,7 +51,7 @@ async def upload_image(file: UploadFile) -> UploadResponse:
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, format="PNG")
 
-    # فصل دقة العرض: الأصل الكامل للمعالجة/التصدير + نسخة preview capped للعرض السريع.
+    # Split display resolution: full-size original for processing/export + a capped preview copy for fast display.
     try:
         preview = make_preview(image, get_settings().preview_max_side)
         preview.save(path.parent / "preview.png", format="PNG")
@@ -83,7 +83,7 @@ async def upload_image(file: UploadFile) -> UploadResponse:
 
 @static_router.get("/storage/{user_id}/{image_id}/{filename}")
 def serve_storage(user_id: str, image_id: str, filename: str):
-    # تطبيق single-user محلي: أي user_id لا يطابق الافتراضي يُرفض بـ 404 (لا تسريب وجود).
+    # Local single-user app: any user_id that does not match the default is rejected with 404 (no existence leak).
     settings = get_settings()
     if (
         not USER_ID_RE.fullmatch(user_id)
@@ -96,8 +96,8 @@ def serve_storage(user_id: str, image_id: str, filename: str):
     path = _resolve_storage_file(user_id, image_id, filename)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="file not found")
-    # رؤوس CORS صريحة للصور: تسمح بتحميلها في <canvas> عبر crossOrigin="anonymous"
-    # دون تلوّث (taint) — حتى لو فُتحت الواجهة من origin مختلف (Tauri/preview).
+    # Explicit CORS headers for images: allow loading them into <canvas> via crossOrigin="anonymous"
+    # without tainting — even when the UI is opened from a different origin (Tauri/preview).
     return FileResponse(
         str(path),
         media_type="image/png",

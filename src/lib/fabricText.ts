@@ -1,7 +1,7 @@
 import { Gradient, Shadow } from "fabric";
 import { hexToRgba, type TextLayer } from "./textLayers";
 
-/** صندوق العرض داخل مشهد fabric (بالبكسل). */
+/** Viewport box inside the fabric scene (in pixels). */
 export interface StageBox {
   x: number;
   y: number;
@@ -11,7 +11,7 @@ export interface StageBox {
 
 export const ACCENT = "#C97B4A";
 
-/** موضع/عرض الطبقة بالبكسل داخل المشهد. */
+/** Layer position/width in pixels inside the scene. */
 export function layerToStage(layer: TextLayer, box: StageBox): { left: number; top: number; width: number } {
   return {
     left: box.x + layer.x * box.w,
@@ -20,11 +20,11 @@ export function layerToStage(layer: TextLayer, box: StageBox): { left: number; t
   };
 }
 
-/** تعبئة النص: لون أو تدرج fabric (مع تراجع آمن للون الصلب). */
+/** Text fill: a color or a fabric gradient (with a safe fallback to a solid color). */
 export function buildTextFill(layer: TextLayer): string | Gradient<"linear"> {
   if (layer.fillType !== "gradient") return layer.color;
   try {
-    // CSS angle: 0deg=للأعلى، 90deg=لليمين — نحوّل لمتجه داخل مربع النسبة.
+    // CSS angle: 0deg=up, 90deg=right — convert it to a vector inside the bounding box.
     const rad = (layer.gradientAngle * Math.PI) / 180;
     const dx = Math.sin(rad) / 2;
     const dy = -Math.cos(rad) / 2;
@@ -58,7 +58,7 @@ export function buildShadow(layer: TextLayer): Shadow | undefined {
 
 const VALID_ALIGN = new Set(["left", "center", "right", "justify", "justify-left", "justify-center", "justify-right"]);
 
-/** خصائص fabric.Textbox من طبقة نص — آمنة (لا ترمي). */
+/** fabric.Textbox options built from a text layer — safe (never throws). */
 export function textboxProps(layer: TextLayer, stage: { left: number; top: number; width: number }): Record<string, unknown> {
   return {
     left: stage.left,
@@ -91,7 +91,7 @@ export function textboxProps(layer: TextLayer, stage: { left: number; top: numbe
   };
 }
 
-/** خصائص مستطيل الصندوق الخلفي (خلف النص). */
+/** Options for the background box rectangle (behind the text). */
 export function boxRectProps(layer: TextLayer, geom: { cx: number; cy: number; w: number; h: number }): Record<string, unknown> | null {
   if (!layer.boxEnabled && !layer.borderEnabled) return null;
   const pad = Math.max(0, layer.padding);
@@ -115,7 +115,7 @@ export function boxRectProps(layer: TextLayer, geom: { cx: number; cy: number; w
   };
 }
 
-/** تطبيع زاوية لقراءة الحالة. */
+/** Normalize an angle for state reads. */
 export function normAngle(a: number): number {
   let n = a % 360;
   if (n > 180) n -= 360;

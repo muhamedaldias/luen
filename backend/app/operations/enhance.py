@@ -1,12 +1,12 @@
-"""تحسين احترافي بزر واحد: خط أنابيب متكامل بأعلى جودة ممكنة كلاسيكياً.
+"""One-click professional enhance: a single pipeline at the highest classical quality.
 
-الترتيب (مهم — كل خطوة تهيئ التالية):
-1) إزالة ضجيج لونية خفيفة تحافظ على الحواف (fastNlMeans)
-2) توازن أبيض Gray-World مدمج جزئياً (يزيل الاصفرار/الازرقاق)
-3) CLAHE على قناة L في LAB (تباين محلي دون حرق الإضاءات)
-4) حيوية انتقائية (تشبع للألوان الباهتة فقط — يحمي البشرة)
-5) حدة Unsharp Mask تكيفية + حماية الهالات
-كل المعالجة float32، وتُحفظ Alpha كما هي.
+Order matters — each step prepares the next:
+1) Light edge-preserving color denoise (fastNlMeans)
+2) Partially blended Gray-World white balance (removes yellow/blue casts)
+3) CLAHE on the L channel in LAB (local contrast without clipping highlights)
+4) Selective vibrance (boosts only faded colors — protects skin tones)
+5) Adaptive Unsharp Mask + halo suppression
+All processing is float32, and the alpha channel is preserved as-is.
 """
 
 import numpy as np
@@ -30,14 +30,14 @@ def _gray_world(bgr: np.ndarray, strength: float) -> np.ndarray:
         return bgr
     gains = gray / np.maximum(means, 1e-3)
     gains = 1.0 + (gains - 1.0) * strength
-    gains = np.clip(gains, 0.85, 1.18)  # كبح آمن ضد الانحراف اللوني
+    gains = np.clip(gains, 0.85, 1.18)  # safe clamp against color cast
     return np.clip(f * gains[None, None, :], 0, 255).astype(np.uint8)
 
 
 def _vibrance(bgr: np.ndarray, amount: float) -> np.ndarray:
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
     s = hsv[:, :, 1] / 255.0
-    # الأقل تشبعاً يأخذ تعزيزاً أكبر (يحمي البشرة المشبعة أصلاً)
+    # Less saturated pixels get the larger boost (protects already-saturated skin tones)
     boost = (1.0 - s) * amount
     hsv[:, :, 1] = np.clip((s * (1.0 + boost)) * 255.0, 0, 255)
     return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
@@ -53,7 +53,7 @@ def pro_enhance(image_id: str, user_id: str, params: dict) -> str:
 
     bgr = _bgr_from(img)
 
-    # 1) إزالة ضجيج خفيفة (تتناسب مع القوة — لا بلاستيكية)
+    # 1) Light denoise (scales with strength — never plastic-looking)
     if k > 0.05:
         h = 3.0 + 5.0 * k
         try:
@@ -61,33 +61,33 @@ def pro_enhance(image_id: str, user_id: str, params: dict) -> str:
         except Exception:
             bgr = cv2.bilateralFilter(bgr, 5, 50, 50)
 
-    # 2) توازن أبيض
+    # 2) White balance
     if k > 0.05:
         bgr = _gray_world(bgr, strength=0.25 + 0.55 * k)
 
-    # 3) CLAHE محلي على L فقط (لا يمس اللون)
+    # 3) Local CLAHE on L only (leaves color untouched)
     lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
     l, a, b = cv2.split(lab)
     clip = 1.4 + 1.8 * k
     clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(8, 8))
     l = clahe.apply(l)
-    # تمديد لطيف إضافي للظلال/الإضاءات بنسبة صغيرة
+    # Gentle extra shadow/highlight stretch at a small ratio
     if k > 0.3:
         l = cv2.convertScaleAbs(l, alpha=1.0 + 0.06 * k, beta=-2.0 * k)
     lab = cv2.merge((l, a, b))
     bgr = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
-    # 4) حيوية انتقائية
+    # 4) Selective vibrance
     if k > 0.05:
         bgr = _vibrance(bgr, amount=0.15 + 0.45 * k)
 
-    # 5) حدة تكيفية: Unsharp حقيقي (صورة − ضبابية) مع كبح الهالات
+    # 5) Adaptive sharpening: true unsharp (image minus blur) with halo suppression
     if k > 0.05:
         sigma = 1.2 + 1.3 * k
         amount = 0.35 + 0.85 * k
         blur = cv2.GaussianBlur(bgr, (0, 0), sigma)
         sharp = cv2.addWeighted(bgr, 1.0 + amount, blur, -amount, 0)
-        # مزج الحدة فقط حيث التفاصيل (قناع Laplacian) لتفادي تضخيم ضجيج السماء
+        # Apply sharpening only where detail exists (Laplacian mask) to avoid amplifying sky noise
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         lap = cv2.Laplacian(gray, cv2.CV_32F, ksize=3)
         detail = np.clip(np.abs(lap) / 24.0, 0, 1).astype(np.float32)

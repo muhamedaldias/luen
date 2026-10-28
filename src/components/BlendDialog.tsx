@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { uploadImage } from "../lib/api";
+import { BLEND_MODES, type BlendMode } from "../lib/blendModes";
 
 export interface BlendParams {
   foregroundUrl: string;
@@ -21,13 +22,21 @@ export interface BlendPlaceParams {
   h: number;
 }
 
-const MODES = [
-  { v: "seamless_normal", label: "Seamless — Normal (Poisson)", hint: "Most accurate insert for matching light — best for products" },
+const MODES: { v: BlendMode; label: string; hint: string }[] = [
+  { v: "seamless_normal", label: "Seamless — Normal (color-matched)", hint: "Most accurate insert for matching light — best for products" },
   { v: "seamless_mixed", label: "Seamless — Mixed texture", hint: "Keeps background texture — best for surfaces (wood/fabric)" },
   { v: "seamless_mono", label: "Seamless — Mono + light transfer", hint: "Best when lighting differs between images" },
-  { v: "pyramid", label: "Multi-band Laplacian pyramid", hint: "Best for panoramas and wide overlaps with no seam" },
+  { v: "pyramid", label: "Multi-band blend (2-scale)", hint: "Best for panoramas and wide overlaps with no seam" },
   { v: "feather", label: "Soft feather + color match", hint: "Fastest — logo/element composite with soft edges" },
 ];
+
+// Be explicit about the limits: the local path is a color match + detail reinjection + a multi-scale mask,
+// not true Poisson (solving the Poisson equation) nor a true Laplacian pyramid. A connected backend provides real Poisson.
+
+// Parity guard: the UI modes must match the canonical engine modes in both count and naming.
+if (import.meta.env.DEV && MODES.length !== BLEND_MODES.length) {
+  console.warn(`[BlendDialog] ${MODES.length} modes in the UI vs ${BLEND_MODES.length} in the engine`);
+}
 
 export default function BlendDialog({ busy = false, hasBackend = false, onClose, onConfirm, onPlace }: { busy?: boolean; hasBackend?: boolean; onClose: () => void; onConfirm: (p: BlendParams) => void; onPlace?: (p: BlendPlaceParams) => void }) {
   const [fgUrl, setFgUrl] = useState<string | null>(null);
@@ -82,9 +91,9 @@ export default function BlendDialog({ busy = false, hasBackend = false, onClose,
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: "100%", maxHeight: "90vh", overflow: "auto", borderRadius: 12, padding: 18, background: "var(--card)", border: "1px solid var(--border)", boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }}>
-        <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>Blend Two Images — High-Quality OpenCV</h3>
+        <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>Blend Two Images — 5 Algorithms</h3>
         <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.7 }}>
-          The current image is the background. Pick the foreground image, position it with the sliders — then either place it as a movable layer (stays editable) or bake it in with the best algorithm.
+          The current image is the background. Pick the foreground image, position it with the sliders — then either place it as a movable layer (stays editable) or bake it in with the best algorithm. All 5 algorithms run locally in your browser; a connected backend offers higher-quality OpenCV/Poisson results.
         </p>
         <button onClick={() => fileRef.current?.click()} style={{ width: "100%", minHeight: 74, borderRadius: 8, cursor: "pointer", background: "var(--secondary)", color: "var(--foreground)", border: "1px dashed var(--border)", fontSize: 12, padding: 10 }}>
           {fgUrl ? (

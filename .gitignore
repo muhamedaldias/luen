@@ -13,6 +13,11 @@ logs/
 .tmp-*
 guide-build/
 
+# pnpm content-addressable store — created inside the project when store-dir is
+# changed, and hundreds of megabytes in size. It must never be committed.
+.pnpm-store/
+.pnpm-store*/
+
 # Environment variables & secrets
 .env*
 !.env.example
@@ -41,6 +46,13 @@ env/
 venv/
 ENV/
 
+# Conda environments. A `conda env create` in this directory produces a
+# multi-hundred-megabyte tree of third-party packages; a random hex-named
+# conda prefix has been seen at the repository root, so match those too.
+.conda/
+environment.yml
+[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
+
 # Rust / Tauri builds
 src-tauri/target/
 src-tauri/binaries/
@@ -48,12 +60,19 @@ src-tauri/binaries/
 # Agent & temporary session caches (Do NOT commit to git)
 .omo/
 .codegraph/
+.commandcode/
 .playwright-mcp/
 .qa-libs/
 qa-wheels/
 /.plugins/
 /.opencode-skills/
 /.figma/design-context/
+
+# Unrelated research artifacts from other work in the same directory.
+# These are not part of the editor and must not be published with it.
+ai-memory-systems-deep-analysis.ipynb
+mem_repos_facts.csv
+*.ipynb
 
 # Scratch files, test captures & dumps
 gl.json
