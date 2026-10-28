@@ -2,6 +2,10 @@ name: CI
 
 # Runs on every push and pull request to main. The point is that code which
 # breaks types, tests, or the production build never lands quietly.
+#
+# The runner image is pinned to ubuntu-24.04 rather than ubuntu-latest: GitHub
+# started migrating the latest label to Ubuntu 26 in October 2026, and a build
+# that changes base image underneath you is not a repeatable build.
 on:
   push:
     branches: [main]
@@ -31,7 +35,7 @@ jobs:
   # ───────────────────────────────────────────
   frontend:
     name: Frontend (typecheck / test / build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
@@ -80,7 +84,7 @@ jobs:
   # ──────────────────────────────────
   backend:
     name: Backend (pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     defaults:
@@ -109,14 +113,27 @@ jobs:
         env:
           DATABASE_URL: sqlite:///./test_ci.db
           STORAGE_ROOT: ./test_storage
-        run: python -m pytest -q
+        run: |
+          set +e
+          python -m pytest -q --tb=short 2>&1 | tee pytest.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # Downloading a job log through the API needs repository admin
+            # rights, so a contributor only sees "exit code 1". Annotations are
+            # world-readable, so replay the tail of the failure as annotations
+            # and the failed check explains itself.
+            tail -n 40 pytest.log | while IFS= read -r line; do
+              printf '::error::%s\n' "${line//%/%25}"
+            done
+            exit "$status"
+          fi
 
   # ─────────────────────────────────────────────
   #  Assets: catch unfetched Git LFS pointers
   # ─────────────────────────────────────────────
   assets:
     name: Assets (no broken LFS pointers)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:

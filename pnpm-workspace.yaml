@@ -1,30 +1,22 @@
 # ─────────────────────────────────────────────────────────────
-#  pnpm workspace config — allow/deny dependency install scripts
+#  pnpm workspace config — control which dependencies run install scripts
 #
-#  Cross-version note:
-#   - pnpm 10.x (pinned in .mise.toml and CI) reads
-#     `onlyBuiltDependencies` as an allow-list and
-#     `neverBuiltDependencies` as a deny-list.
-#   - pnpm 11.x uses `allowBuilds` with boolean values.
-#  All three keys are kept so either major version behaves the same and
-#  avoids both ERR_PNPM_IGNORED_BUILDS and the native build failure for
-#  the canvas package on CI.
+#  Only an allow-list is declared. pnpm 10 aborts with
+#    ERR_PNPM_CONFIG_CONFLICT_BUILT_DEPENDENCIES
+#  when both onlyBuiltDependencies and neverBuiltDependencies are present,
+#  and it aborts before fetching a single package. Everything absent from
+#  the allow-list has its install script skipped, so canvas is already
+#  denied by omission and a separate deny-list is redundant.
 #
-#  - protobufjs: genuinely required by onnxruntime-web — its build is allowed.
-#  - canvas: an optional dependency of fabric used only under Node. Nothing in
-#    src/ imports it, and its native build needs cairo/pango, which usually
-#    fails on Linux. Its build is denied.
+#  - protobufjs: required by onnxruntime-web; its build is allowed.
+#  - canvas: an optional dependency of fabric used only under Node. Nothing
+#    in src/ imports it, and its native build needs cairo and pango, which
+#    routinely fail on Linux runners, so it stays off the allow-list.
 #
-#  Note: HEAD shipped this file with the raw template text
-#  "set this to true or false", which is not valid syntax. Fixed.
+#  Historical note: HEAD shipped this file with the raw template text
+#  "set this to true or false", which is not valid semantics for a build
+#  allow-list. Fixed here.
 # ─────────────────────────────────────────────────────────────
 
 onlyBuiltDependencies:
   - protobufjs
-
-neverBuiltDependencies:
-  - canvas
-
-allowBuilds:
-  protobufjs: true
-  canvas: false
